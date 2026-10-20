@@ -1,0 +1,37 @@
+{
+  "name": "@local/dsh-github-workspaces",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把 GitHub 仓库当工作区：从 GitHub 克隆 / 拉取，工作区用仓库名，内置国内网络加速策略（直连 / 镜像前缀 / 本地代理 / SSH-over-443）。",
+  "type": "module",
+  "icon": "icon.svg",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

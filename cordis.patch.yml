@@ -1,0 +1,11 @@
+# dsh-github-workspaces bundle patch.
+#
+# 一个裸插件行：宿主半边（exports "."）负责 /api/dsh-github-workspaces 路由、
+# git 克隆/拉取/推送、以及 github_workspace 工具；package.json 的 dsh.client
+# 声明让浏览器半边（exports "./client"）在 Web GUI 里加载侧边栏入口和面板。
+#
+# 设置不放在 Cordis 配置里（避免为 schemastery 增加依赖），而是落在
+# $DSH_HOME/dsh-github-workspaces.json（0600），可从面板里改。
+- insert:
+    - id: github-workspaces
+      name: '@local/dsh-github-workspaces'

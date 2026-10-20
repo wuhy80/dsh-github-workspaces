@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="GitHub Workspaces">
+  <defs>
+    <linearGradient id="gw-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f81f7"/>
+      <stop offset="1" stop-color="#1b4fa8"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#gw-fill)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round">
+    <path d="M11 10v7.5a3.5 3.5 0 0 0 3.5 3.5H21"/>
+    <path d="M11 17.5a3.5 3.5 0 0 0 3.5 3.5"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="11" cy="8.5" r="2.4"/>
+    <circle cx="22" cy="21" r="2.4"/>
+    <circle cx="14.5" cy="21" r="1.7" opacity="0.75"/>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "GitHub Workspaces",
+    "description": "One workspace per GitHub repository: clone, pull, commit and push straight from GitHub, with the workspace titled after the repo. Ships four network strategies for mainland China: direct, mirror prefix, local proxy, and SSH-over-443."
+  }
+}
