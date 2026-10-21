@@ -20,7 +20,7 @@ import { test } from 'node:test'
 
 import { archiveKind, countEscapes, extractArchive, guessRepoName, unwrapSingleDirectory } from '../lib/archive.js'
 import { WorkspaceOpener } from '../lib/opener.js'
-import { probePort } from '../lib/proxy-probe.js'
+import { probeHttpConnect, probeLocalProxies, probePort } from '../lib/proxy-probe.js'
 
 import { GitRunner, fetchArgs, integrateArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
 import { run } from '../lib/proc.js'
@@ -379,6 +379,36 @@ test('代理探测：识别 SOCKS5 端口，关闭端口返回 null', async () =
     assert.equal(await probePort(1), null)
   } finally {
     server.close()
+  }
+})
+
+test('代理探测：普通 Web 服务不会被误报成代理', async () => {
+  const makeServer = (reply) => net.createServer((socket) => {
+    socket.once('data', () => socket.write(reply))
+  })
+  const socksServer = makeServer(Buffer.from([0x05, 0x00]))
+  const proxyServer = makeServer('HTTP/1.1 200 Connection established\r\n\r\n')
+  const webServer = makeServer('HTTP/1.1 400 Bad Request\r\n\r\n')
+  const servers = [socksServer, proxyServer, webServer]
+  const ports = []
+  try {
+    for (const server of servers) {
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+      ports.push(server.address().port)
+    }
+    const [socksPort, proxyPort, webPort] = ports
+
+    assert.equal(await probeHttpConnect(proxyPort), true, 'CONNECT 200 应判为 http 代理')
+    assert.equal(await probeHttpConnect(webPort), false, 'CONNECT 400 不是代理')
+
+    const found = await probeLocalProxies(ports)
+    assert.deepEqual(found.map((item) => [item.port, item.kind]), [
+      [socksPort, 'socks5'],
+      [proxyPort, 'http'],
+    ])
+    assert.equal(found.some((item) => item.port === webPort), false, '普通 Web 服务应被丢弃')
+  } finally {
+    for (const server of servers) server.close()
   }
 })
 
