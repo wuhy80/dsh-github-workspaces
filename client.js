@@ -35,6 +35,11 @@ window.__ModuleLoader__.load({
         'action.save': '保存',
         'action.open': '打开',
         'action.pull': '拉取',
+        'action.push': '推送',
+        'action.rebase': '变基到远端',
+        'action.merge': '合并远端',
+        'action.continueIntegration': '继续',
+        'action.abortIntegration': '中止整合',
         'action.commit': '提交并推送',
         'action.changes': '改动',
         'action.hideChanges': '收起改动',
@@ -77,6 +82,11 @@ window.__ModuleLoader__.load({
         'action.save': 'Save',
         'action.open': 'Open',
         'action.pull': 'Pull',
+        'action.push': 'Push',
+        'action.rebase': 'Rebase onto remote',
+        'action.merge': 'Merge remote',
+        'action.continueIntegration': 'Continue',
+        'action.abortIntegration': 'Abort',
         'action.commit': 'Commit & push',
         'action.changes': 'Changes',
         'action.hideChanges': 'Hide changes',
@@ -403,7 +413,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 已打开工作区的卡片：状态 + 改动勾选 + 单文件 diff 预览。 */
-    function WorkspaceCard({ row, busy, onPull, onCommit, onReveal, onForget }) {
+    function WorkspaceCard({ row, busy, onPull, onPush, onIntegrate, onAbort, onContinue, onCommit, onReveal, onForget }) {
       const [open, setOpen] = useState(false)
       const [files, setFiles] = useState(null)
       const [selected, setSelected] = useState({})
@@ -489,7 +499,37 @@ window.__ModuleLoader__.load({
           : null,
         h('div', { key: 'ops', style: S.row }, [
           h(Button, { key: 'pull', onClick: () => onPull(row), disabled: busy, primary: row.behind > 0 }, busy ? '…' : t('action.pull', '拉取')),
+          h(Button, { key: 'push', onClick: () => onPush(row), disabled: busy || !(row.ahead > 0) }, `${t('action.push', '推送')} ${row.ahead > 0 ? row.ahead : ''}`.trim()),
         ]),
+
+        // 停在 rebase/merge 中间态：给「继续」和「中止」两条出路
+        row.state !== undefined && row.state !== 'clean'
+          ? h('div', {
+            key: 'conflict',
+            style: { ...S.banner, background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-state-warn-primary)', color: 'var(--dsw-alias-state-warn-primary)' },
+          }, [
+            h('div', { key: 't' }, `仓库停在${row.state === 'rebasing' ? '变基' : '合并'}中间态${(row.conflicts ?? []).length > 0 ? `，还有 ${row.conflicts.length} 个冲突文件：` : ''}`),
+            (row.conflicts ?? []).length > 0 ? h('div', { key: 'l', style: { ...S.mono, whiteSpace: 'pre-wrap' } }, row.conflicts.join('\n')) : null,
+            h('div', { key: 'b', style: { ...S.row, marginTop: 6 } }, [
+              h(Button, { key: 'c', onClick: () => onContinue(row), disabled: busy, primary: true }, t('action.continueIntegration', '继续')),
+              h(Button, { key: 'a', onClick: () => onAbort(row), disabled: busy }, t('action.abortIntegration', '中止整合')),
+            ]),
+          ])
+          : null,
+
+        // 本地与远端都往前走了：让用户显式选变基还是合并，绝不自动
+        row.state === 'clean' && row.ahead > 0 && row.behind > 0
+          ? h('div', {
+            key: 'diverged',
+            style: { ...S.banner, background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-state-warn-primary)', color: 'var(--dsw-alias-state-warn-primary)' },
+          }, [
+            h('div', { key: 't' }, `与远端分叉：本地领先 ${row.ahead}、落后 ${row.behind}`),
+            h('div', { key: 'b', style: { ...S.row, marginTop: 6 } }, [
+              h(Button, { key: 'r', onClick: () => onIntegrate(row, 'rebase'), disabled: busy, primary: true }, t('action.rebase', '变基到远端')),
+              h(Button, { key: 'm', onClick: () => onIntegrate(row, 'merge'), disabled: busy }, t('action.merge', '合并远端')),
+            ]),
+          ])
+          : null,
 
         open ? h('div', {
           key: 'panel',
@@ -698,6 +738,58 @@ window.__ModuleLoader__.load({
         }
       })
 
+      const push = (row) => run(`push:${row.fullName}`, async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: `推送 ${row.fullName}…`, percent: null })
+        try {
+          const payload = await streamCall(`${API}/push`, { repo: row.fullName }, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          setNotice(`${row.fullName}：已推送（${payload.strategy ?? ''}）`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
+      const integrate = (row, mode) => run(`integrate:${row.fullName}`, async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: mode === 'rebase' ? '变基到远端…' : '合并远端…', percent: null })
+        try {
+          const payload = await streamCall(`${API}/integrate`, { repo: row.fullName, mode }, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          setNotice(`${row.fullName}：${payload.upToDate === true ? '已是最新' : `已${mode === 'rebase' ? '变基' : '合并'}到远端，待推 ${payload.ahead ?? 0} 个提交`}`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
+      /** 中止停在中间态的变基/合并。 */
+      const abortInt = (row) => run(`abort:${row.fullName}`, async () => {
+        await call(`${API}/integration-abort`, { repo: row.fullName })
+        setNotice(`${row.fullName}：已中止，回到整合前的状态`)
+        await refresh()
+      })
+
+      /** 冲突解决之后继续。 */
+      const continueInt = (row) => run(`continue:${row.fullName}`, async () => {
+        const payload = await call(`${API}/integration-continue`, { repo: row.fullName })
+        setNotice(`${row.fullName}：已继续（当前状态 ${payload.state ?? 'clean'}）`)
+        await refresh()
+      })
+
       const commit = (row, message, paths) => run(`commit:${row.fullName}`, async () => {
         const controller = new AbortController()
         abortRef.current = controller
@@ -869,6 +961,10 @@ window.__ModuleLoader__.load({
                 row,
                 busy: busy !== '' && busy !== 'load',
                 onPull: pull,
+                onPush: push,
+                onIntegrate: integrate,
+                onAbort: abortInt,
+                onContinue: continueInt,
                 onCommit: commit,
                 onReveal: reveal,
                 onForget: forget,

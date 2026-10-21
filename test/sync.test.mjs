@@ -12,12 +12,12 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { fetchArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
+import { GitRunner, fetchArgs, integrateArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
 import { run } from '../lib/proc.js'
 import { SettingsStore } from '../lib/store.js'
 
@@ -153,3 +153,76 @@ test('ensureCloneRoot 在盘符不存在时给出可读报错', () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('integrateArgs 变基/合并都对着跟踪 ref', () => {
+  assert.deepEqual(integrateArgs('rebase', 'main'), ['rebase', trackingRef('main')])
+  assert.deepEqual(integrateArgs('merge', 'main'), ['merge', '--no-edit', trackingRef('main')])
+})
+
+test('分叉后变基：本地提交被重放到远端之上', () => {
+  const env = setup()
+  try {
+    advance(env, 'upstream')
+    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'local'], env.clone)
+    git(fetchArgs(env.url, 'main'), env.clone)
+    assert.equal(git(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'], env.clone), '1\t1', '应先形成 1 领先 1 落后的分叉')
+
+    git(integrateArgs('rebase', 'main'), env.clone)
+
+    assert.equal(git(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'], env.clone), '1\t0', '变基后应只剩领先 1')
+    assert.equal(git(['log', '-1', '--format=%s'], env.clone), 'local', '顶层仍是本地那个提交')
+    assert.equal(git(['log', '-1', '--format=%s', 'HEAD^'], env.clone), 'upstream', '本地提交应落在远端之上')
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('变基冲突时能识别中间态并中止回原状', async () => {
+  const env = setupConflict()
+  try {
+    const store = new SettingsStore(env.root)
+    const runner = new GitRunner(store)
+    git(fetchArgs(env.url, 'main'), env.clone)
+
+    // 直接用插件会执行的命令序列，确保它真的冲突
+    const attempted = spawnSync('git', ['-C', env.clone, ...integrateArgs('rebase', 'main')], { encoding: 'utf8' })
+    assert.notEqual(attempted.status, 0, '冲突时应返回非 0')
+
+    assert.equal(runner.repoState(env.clone), 'rebasing')
+    assert.deepEqual(await runner.conflictedFiles(env.clone), ['f.txt'])
+
+    const aborted = await runner.abortIntegration(env.clone)
+    assert.equal(aborted.ok, true)
+    assert.equal(runner.repoState(env.clone), 'clean', '中止后应回到干净状态')
+    assert.equal(git(['log', '-1', '--format=%s'], env.clone), 'local', '中止不应丢掉本地提交')
+  } finally {
+    env.cleanup()
+  }
+})
+
+/** 同一行冲突的三件套。 */
+function setupConflict() {
+  const root = mkdtempSync(path.join(tmpdir(), 'gw-conflict-'))
+  const bare = path.join(root, 'upstream.git')
+  const work = path.join(root, 'work')
+  const clone = path.join(root, 'clone')
+  git(['init', '--bare', '--initial-branch=main', bare], root)
+  git(['init', '--initial-branch=main', work], root)
+  writeFileSync(path.join(work, 'f.txt'), 'base\n')
+  git(['add', '-A'], work)
+  git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'base'], work)
+  git(['remote', 'add', 'origin', bare], work)
+  git(['push', '-u', 'origin', 'main'], work)
+  const url = `file:///${bare.replace(/\\/g, '/')}`
+  git(['clone', '--depth', '1', '--single-branch', url, clone], root)
+  // 远端改这一行
+  writeFileSync(path.join(work, 'f.txt'), 'upstream\n')
+  git(['add', '-A'], work)
+  git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'upstream'], work)
+  git(['push', 'origin', 'main'], work)
+  // 本地也改这一行 → 必然冲突
+  writeFileSync(path.join(clone, 'f.txt'), 'local\n')
+  git(['add', '-A'], clone)
+  git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'local'], clone)
+  return { root, bare, work, clone, url, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+}
