@@ -48,6 +48,7 @@ window.__ModuleLoader__.load({
         'action.pullAll': '全部拉取',
         'hint.branches': '切换 / 新建分支',
         'hint.newBranch': '新分支名（从当前 HEAD 建）',
+        'hint.openPanel': '打开 GitHub 工作区面板',
         'action.commit': '提交并推送',
         'action.changes': '改动',
         'action.hideChanges': '收起改动',
@@ -103,6 +104,7 @@ window.__ModuleLoader__.load({
         'action.pullAll': 'Pull all',
         'hint.branches': 'Switch / create branch',
         'hint.newBranch': 'New branch name (from current HEAD)',
+        'hint.openPanel': 'Open the GitHub workspaces panel',
         'action.commit': 'Commit & push',
         'action.changes': 'Changes',
         'action.hideChanges': 'Hide changes',
@@ -1158,6 +1160,49 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * 新建会话那一行的小入口。
+     *
+     * 说明：`conversation.hero.workspace.directoryFlow` 是个 single 槽位，且已被内置的
+     * 目录选择器占着——注册进去会把「选择目录」顶掉，所以这里只做增量入口：
+     * 点一下跳到 GitHub 工作区面板，仓库列表与「打开」都在那儿。
+     */
+    function HeroGitHubButton() {
+      return h('button', {
+        type: 'button',
+        title: t('hint.openPanel', '打开 GitHub 工作区面板'),
+        onClick: () => {
+          try {
+            const layout = typeof clientCtx?.get === 'function' ? clientCtx.get('layout') : undefined
+            if (layout !== undefined && layout !== null && typeof layout.selectPanel === 'function') {
+              layout.selectPanel(PANEL_ID)
+            }
+          } catch {
+            /* 跳转失败不影响会话 */
+          }
+        },
+        style: { ...S.button, padding: '3px 8px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 },
+      }, [
+        h('svg', {
+          key: 'i',
+          viewBox: '0 0 16 16',
+          width: 11,
+          height: 11,
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.6,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': true,
+        }, [
+          h('path', { key: 'p', d: 'M5 4.5v5a2 2 0 0 0 2 2h4' }),
+          h('circle', { key: 'a', cx: 5, cy: 3.5, r: 1.4, fill: 'currentColor', stroke: 'none' }),
+          h('circle', { key: 'b', cx: 11.5, cy: 11.5, r: 1.4, fill: 'currentColor', stroke: 'none' }),
+        ]),
+        h('span', { key: 't' }, 'GitHub'),
+      ])
+    }
+
+    /**
      * 侧边栏图标（壳层给尺寸与选中状态，只画图形）+ 「有仓库落后」角标。
      *
      * 角标数据来自 `/summary`：那条路由只读本地，不发网络请求，所以每分钟轮询
@@ -1232,6 +1277,13 @@ window.__ModuleLoader__.load({
             name: 'main',
             key: PANEL_ID,
           }, Panel)))
+
+          // 新建会话那一行的轻量入口（增量槽位，不顶替任何内置控件）
+          disposers.push(ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({
+            name: 'conversation.hero.options',
+            id: 'github-workspaces',
+            order: 20,
+          }, HeroGitHubButton)))
         } catch (error) {
           // 面板注册失败只降级 UI，绝不把壳层启动带崩
           console.warn('[github-workspaces] panel registration failed:', error)
