@@ -87,8 +87,9 @@ test/sync.test.mjs  同步路径回归测试（临时裸仓库，不碰网络）
 node --test test/sync.test.mjs
 ```
 
-三条用例：fetch 参数不再带 `--depth`；浅克隆 + 远端前进 + 插件的 fetch/merge 序列能快进且
-跟踪 ref 同步、仓库仍是浅克隆；推送到 URL 后补 `update-ref` 使 ahead 归零。
+五条用例：fetch 参数不再带 `--depth`；浅克隆 + 远端前进 + 插件的 fetch/merge 序列能快进且
+跟踪 ref 同步、仓库仍是浅克隆；推送到 URL 后补 `update-ref` 使 ahead 归零；超时后立即结算；
+`AbortSignal` 中止会杀掉子进程并标记 `aborted`。
 
 ## 已知限制
 

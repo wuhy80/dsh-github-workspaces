@@ -18,6 +18,7 @@ import path from 'node:path'
 import { test } from 'node:test'
 
 import { fetchArgs, mergeArgs, trackingRef } from '../lib/git.js'
+import { run } from '../lib/proc.js'
 
 /** 跑一条 git 命令，失败即抛。 */
 function git(args, cwd) {
@@ -91,4 +92,25 @@ test('推送到 URL 之后补 update-ref，ahead 才会归零', () => {
   } finally {
     env.cleanup()
   }
+})
+
+test('超时后立即结算（不能等子进程自己退出）', async () => {
+  const started = Date.now()
+  const result = await run(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { timeoutMs: 1200 })
+  const elapsed = Date.now() - started
+  assert.equal(result.timedOut, true)
+  assert.equal(result.code, null)
+  assert.ok(elapsed < 15_000, `超时应在数秒内返回，实际 ${elapsed}ms`)
+})
+
+test('AbortSignal 会杀掉进程并标记 aborted', async () => {
+  const controller = new AbortController()
+  const pending = run(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+    timeoutMs: 60_000,
+    signal: controller.signal,
+  })
+  setTimeout(() => controller.abort(), 300)
+  const result = await pending
+  assert.equal(result.aborted, true)
+  assert.equal(result.timedOut, false)
 })
