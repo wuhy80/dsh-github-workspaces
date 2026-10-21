@@ -117,6 +117,10 @@ node --test test/sync.test.mjs
 
 ## 变更日志
 
-- 0.3.0 — 改动勾选 + 单文件 diff；提交/推送走流式
-- 0.2.0 — 修好浅克隆下的拉取与 ahead/behind
+见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 wuhy80
+
 
