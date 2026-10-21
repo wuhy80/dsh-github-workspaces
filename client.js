@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useCallback, useEffect, useState } = React
+    const { useCallback, useEffect, useRef, useState } = React
 
     /** 面板 id：侧边栏图标与 main 槽位共用。 */
     const PANEL_ID = 'github-workspaces'
@@ -39,7 +39,9 @@ window.__ModuleLoader__.load({
         'action.reveal': '打开目录',
         'action.forget': '移除登记',
         'action.loadRepos': '加载我的仓库',
+        'action.cancel': '取消',
         'action.close': '收起',
+        'diag.preferred': '首选',
         'section.open': '打开仓库',
         'section.workspaces': '已打开的工作区',
         'section.settings': '设置',
@@ -263,6 +265,72 @@ window.__ModuleLoader__.load({
       return payload
     }
 
+    /**
+     * 一次 NDJSON 流式调用（克隆/拉取）。
+     *
+     * 逐帧回调 `onFrame(frame)`，帧类型：stage / progress / result。
+     * result 帧的 payload.ok === false 时抛错（带上 payload）。
+     * @param {string} path - 接口路径。
+     * @param {object} body - 请求体。
+     * @param {{onFrame?: Function, signal?: AbortSignal}} [options]
+     */
+    async function streamCall(path, body, options = {}) {
+      const { onFrame, signal } = options
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+        signal,
+      })
+      if (!response.ok || response.body === null) {
+        let text = ''
+        try {
+          text = await response.text()
+        } catch {
+          text = ''
+        }
+        let parsed = null
+        try {
+          parsed = JSON.parse(text)
+        } catch {
+          parsed = null
+        }
+        const error = new Error(parsed !== null && typeof parsed.error === 'string' ? parsed.error : `HTTP ${response.status}`)
+        error.payload = parsed
+        throw error
+      }
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let final = null
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (line.trim() === '') continue
+          let frame = null
+          try {
+            frame = JSON.parse(line)
+          } catch {
+            continue
+          }
+          if (frame.type === 'result') final = frame
+          else if (typeof onFrame === 'function') onFrame(frame)
+        }
+      }
+      if (final === null) throw new Error('流式响应没有给出结果帧（连接可能被中断）')
+      if (final.ok === false || (final.payload !== undefined && final.payload !== null && final.payload.ok === false)) {
+        const payload = final.payload ?? {}
+        const error = new Error(typeof payload.error === 'string' ? payload.error : '操作失败')
+        error.payload = payload
+        throw error
+      }
+      return final.payload ?? { ok: true }
+    }
+
     /** 打开后把 GUI 切到那个工作区（服务不可用就静默放弃）。 */
     function jumpToWorkspace(workspaceId) {
       if (typeof workspaceId !== 'string' || workspaceId === '') return
@@ -421,6 +489,16 @@ window.__ModuleLoader__.load({
       const [urlInput, setUrlInput] = useState('')
       const [diag, setDiag] = useState(null)
       const [diagOpen, setDiagOpen] = useState(false)
+      /** 正在跑的流式操作（克隆/拉取）的阶段与百分比；null 表示没有。 */
+      const [stage, setStage] = useState(null)
+      /** 当前可取消操作的 AbortController。 */
+      const abortRef = useRef(null)
+
+      /** 取消正在进行的克隆/拉取：abort 会让宿主杀掉 git 子进程。 */
+      const cancel = useCallback(() => {
+        const controller = abortRef.current
+        if (controller !== null && controller !== undefined) controller.abort()
+      }, [])
 
       const refresh = useCallback(async () => {
         setBusy('load')
@@ -454,24 +532,54 @@ window.__ModuleLoader__.load({
         try {
           await action()
         } catch (problem) {
-          setError(errorText(problem))
+          const aborted = problem !== null && problem !== undefined && (problem.name === 'AbortError' || /已取消|cancel/i.test(String(problem.message ?? '')))
+          if (aborted) setNotice('已取消')
+          else setError(errorText(problem))
         } finally {
           setBusy('')
         }
       }, [])
 
       const openRepo = (input) => run('open', async () => {
-        const payload = await call(`${API}/open`, { input })
-        setUrlInput('')
-        setNotice(`${t('notice.opened', '已打开')} ${payload.fullName} → ${payload.title}`)
-        await refresh()
-        jumpToWorkspace(payload.workspaceId)
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: '准备克隆…', percent: null })
+        try {
+          const payload = await streamCall(`${API}/open`, { input }, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+              else if (frame.type === 'progress') setStage((previous) => ({ text: previous.text, percent: frame.percent }))
+            },
+          })
+          setUrlInput('')
+          setNotice(`${t('notice.opened', '已打开')} ${payload.fullName} → ${payload.title}`)
+          await refresh()
+          jumpToWorkspace(payload.workspaceId)
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
       })
 
       const pull = (row) => run(`pull:${row.fullName}`, async () => {
-        const payload = await call(`${API}/pull`, { repo: row.fullName })
-        setNotice(`${row.fullName}：${payload.upToDate === true ? '已是最新' : '已快进更新'}（${payload.strategy}）`)
-        await refresh()
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: `拉取 ${row.fullName}…`, percent: null })
+        try {
+          const payload = await streamCall(`${API}/pull`, { repo: row.fullName }, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+              else if (frame.type === 'progress') setStage((previous) => ({ text: previous.text, percent: frame.percent }))
+            },
+          })
+          setNotice(`${row.fullName}：${payload.upToDate === true ? '已是最新' : '已快进更新'}（${payload.strategy}）`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
       })
 
       const commit = (row, message) => run(`commit:${row.fullName}`, async () => {
@@ -535,10 +643,33 @@ window.__ModuleLoader__.load({
             h('div', { key: 's', style: S.subtitle }, t('page.subtitle', '每个 GitHub 仓库就是一个工作区，标题取仓库名')),
           ]),
           h(Button, { key: 'diag', onClick: diagnose, disabled: busy !== '' }, t('action.diagnose', '网络自检')),
+          stage === null ? null : h(Button, { key: 'cancel', onClick: cancel }, t('action.cancel', '取消')),
           h(Button, { key: 'refresh', onClick: refresh, disabled: busy !== '' }, busy === 'load' ? t('state.loading', '加载中…') : t('action.refresh', '刷新')),
         ]),
 
         h('div', { key: 'body', style: S.body }, [
+          stage === null
+            ? null
+            : h('div', {
+              key: 'stage',
+              style: { ...S.banner, background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-border-l1)', color: 'var(--dsw-alias-label-secondary)' },
+            }, [
+              h('div', { key: 't', style: { display: 'flex', justifyContent: 'space-between', gap: 8 } }, [
+                h('span', { key: 'x' }, stage.text ?? ''),
+                h('span', { key: 'p', style: S.mono }, stage.percent === null || stage.percent === undefined ? '' : `${stage.percent}%`),
+              ]),
+              h('div', { key: 'bar', style: { marginTop: 6, height: 4, borderRadius: 2, background: 'var(--dsw-alias-border-l1)', overflow: 'hidden' } }, [
+                h('div', {
+                  key: 'fill',
+                  style: {
+                    height: '100%',
+                    width: `${stage.percent === null || stage.percent === undefined ? 15 : stage.percent}%`,
+                    background: 'var(--dsw-alias-brand-primary)',
+                    transition: 'width 200ms ease',
+                  },
+                }),
+              ]),
+            ]),
           error === '' ? null : h('div', {
             key: 'error',
             style: { ...S.banner, background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)' },
@@ -562,7 +693,8 @@ window.__ModuleLoader__.load({
               ]),
               ...(diag.rows ?? []).map((row, index) => h('div', { key: `r${index}`, style: S.row }, [
                 h(Chip, { key: 's', tone: row.ok ? 'ok' : 'error' }, row.ok ? 'OK' : 'FAIL'),
-                h('span', { key: 'n', style: S.grow }, row.strategy === 'mirror' ? `mirror ${row.mirror}` : row.strategy),
+                h('span', { key: 'n', style: S.grow }, row.label ?? (row.strategy === 'mirror' ? `mirror ${row.mirror}` : row.strategy)),
+                row.strategy === diag.preferred ? h(Chip, { key: 'p', tone: 'ok' }, t('diag.preferred', '首选')) : null,
                 h('span', { key: 'ms', style: S.mono }, `${row.ms} ms`),
                 row.ok ? null : h('span', { key: 'e', style: { ...S.mono, flex: 2 } }, row.error ?? ''),
               ])),

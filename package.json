@@ -1,11 +1,17 @@
 {
   "name": "@local/dsh-github-workspaces",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "把 GitHub 仓库当工作区：从 GitHub 克隆 / 拉取，工作区用仓库名，内置国内网络加速策略（直连 / 镜像前缀 / 本地代理 / SSH-over-443）。",
+  "description": "把 GitHub 仓库当工作区：从 GitHub 克隆 / 拉取，工作区用仓库名，内置国内网络加速策略（直连 / SSH-over-443 / 镜像前缀 / 本地代理）。",
   "type": "module",
   "icon": "icon.svg",
   "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -17,12 +23,16 @@
     "index.js",
     "lib",
     "client.js",
+    "test",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
     "README.md"
   ],
   "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
