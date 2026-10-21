@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif">
+  <rect width="960" height="360" fill="#ffffff"/>
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+
+  <text x="32" y="40" font-size="19" font-weight="700" fill="#1f2328">国内网络：读链路自动降级 + 代理兜底</text>
+  <text x="32" y="64" font-size="12.5" fill="#57606a">mode=auto 按 ①→②→③ 尝试，任一成功即停；成功者记为首选并写入设置。代理并行作用于 ① 与 API，不是链路上的第 4 步。</text>
+
+  <!-- 三个候选 -->
+  <rect x="32" y="96" width="228" height="88" rx="9" fill="#ffffff" stroke="#1f6feb" stroke-width="1.5"/>
+  <text x="48" y="122" font-size="13" font-weight="700" fill="#1f2328">① 直连</text>
+  <text x="48" y="144" font-size="11" fill="#57606a">https://github.com/…</text>
+  <text x="48" y="164" font-size="11" fill="#57606a">有 token 时自动带鉴权</text>
+
+  <rect x="300" y="96" width="228" height="88" rx="9" fill="#ffffff" stroke="#1a7f37" stroke-width="1.5"/>
+  <text x="316" y="122" font-size="13" font-weight="700" fill="#1f2328">② SSH-over-443</text>
+  <text x="316" y="144" font-size="11" fill="#57606a">ssh.github.com:443</text>
+  <text x="316" y="164" font-size="11" fill="#57606a">22 端口被墙时的常用退路</text>
+
+  <rect x="568" y="96" width="228" height="88" rx="9" fill="#ffffff" stroke="#9a6700" stroke-width="1.5"/>
+  <text x="584" y="122" font-size="13" font-weight="700" fill="#1f2328">③ 镜像前缀</text>
+  <text x="584" y="144" font-size="11" fill="#57606a">ghfast.top / gh-proxy.com…</text>
+  <text x="584" y="164" font-size="11" fill="#9a6700">只读：推送不走镜像</text>
+
+  <!-- 失败箭头 -->
+  <line x1="260" y1="140" x2="296" y2="140" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <line x1="528" y1="140" x2="564" y2="140" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <text x="264" y="132" font-size="10.5" fill="#cf222e">失败</text>
+  <text x="532" y="132" font-size="10.5" fill="#cf222e">失败</text>
+  <line x1="796" y1="140" x2="832" y2="140" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <text x="800" y="132" font-size="10.5" fill="#cf222e">失败</text>
+
+  <!-- 全失败 -->
+  <rect x="836" y="112" width="96" height="56" rx="8" fill="#fff1f0" stroke="#cf222e" stroke-width="1.4"/>
+  <text x="850" y="136" font-size="12" font-weight="700" fill="#cf222e">都失败</text>
+  <text x="850" y="156" font-size="10" fill="#57606a">看「自检」</text>
+
+  <!-- 成功说明 -->
+  <rect x="32" y="212" width="900" height="52" rx="9" fill="#f0f7ff" stroke="#1f6feb" stroke-width="1"/>
+  <text x="48" y="235" font-size="12" font-weight="700" fill="#1f2328">成功 → 立即采用，并把该策略写进 network.preferred</text>
+  <text x="48" y="254" font-size="11" fill="#57606a">下次克隆 / 拉取会把它提到最前，不再先白等直连超时 21 秒</text>
+
+  <!-- 底部要点 -->
+  <text x="32" y="292" font-size="11" fill="#57606a">· 代理：network.proxy 同时作用于 GitHub API（curl --proxy）与 git（http.proxy / https.proxy）。</text>
+  <text x="32" y="312" font-size="11" fill="#57606a">· 判死：自检每条链路 8 秒；克隆 420 秒、拉取 300 秒上限，随时可取消（会杀掉整个进程树）。</text>
+  <text x="32" y="332" font-size="11" fill="#57606a">· 自检并行探测所有链路（含每个镜像候选），列出耗时并标出当前首选。</text>
+</svg>

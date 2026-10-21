@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="404" viewBox="0 0 960 404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif">
+  <rect width="960" height="404" fill="#ffffff"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+
+  <text x="32" y="42" font-size="19" font-weight="700" fill="#1f2328">GitHub 工作区：一个仓库 = 一个工作区</text>
+  <text x="32" y="66" font-size="12.5" fill="#57606a">浏览器半边只画界面，宿主半边真正跑 git；工作区标题取仓库名，克隆到 &lt;cloneRoot&gt;/&lt;owner&gt;/&lt;repo&gt;</text>
+
+  <!-- 浏览器列 -->
+  <rect x="32" y="92" width="272" height="236" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="48" y="120" font-size="13" font-weight="700" fill="#1f2328">浏览器半边（DSH Web GUI）</text>
+  <text x="48" y="150" font-size="12" fill="#24292f">· 侧边栏图标 +「落后」角标</text>
+  <text x="48" y="178" font-size="12" fill="#24292f">· GitHub 工作区面板</text>
+  <text x="48" y="206" font-size="12" fill="#24292f">· 新建会话行的小入口</text>
+  <text x="48" y="234" font-size="12" fill="#24292f">· 仓库 / 分支 / 改动面板</text>
+  <text x="48" y="262" font-size="12" fill="#24292f">· 进度条与「取消」</text>
+  <text x="48" y="300" font-size="11" fill="#57606a">点一下才会调宿主，不直接碰磁盘</text>
+
+  <!-- 宿主列 -->
+  <rect x="344" y="92" width="292" height="236" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="360" y="120" font-size="13" font-weight="700" fill="#1f2328">宿主进程（Node）</text>
+  <text x="360" y="150" font-size="12" fill="#24292f">· /api/dsh-github-workspaces</text>
+  <text x="360" y="178" font-size="12" fill="#24292f">· git：clone · fetch · merge</text>
+  <text x="360" y="206" font-size="12" fill="#24292f">· 提交 · 推送 · 变基 · 合并</text>
+  <text x="360" y="234" font-size="12" fill="#24292f">· workspaceRegistry.create()</text>
+  <text x="360" y="262" font-size="12" fill="#24292f">· NDJSON 流式进度</text>
+  <text x="360" y="300" font-size="11" fill="#57606a">每个仓库一个工作区，标题 = 仓库名</text>
+
+  <!-- 右侧三个目标 -->
+  <rect x="700" y="92" width="228" height="62" rx="8" fill="#ffffff" stroke="#1f6feb" stroke-width="1.4"/>
+  <text x="716" y="116" font-size="12.5" font-weight="700" fill="#1f6feb">GitHub 仓库</text>
+  <text x="716" y="138" font-size="11" fill="#57606a">直连 · SSH-over-443 · 镜像</text>
+
+  <rect x="700" y="172" width="228" height="76" rx="8" fill="#ffffff" stroke="#1a7f37" stroke-width="1.4"/>
+  <text x="716" y="196" font-size="12.5" font-weight="700" fill="#1a7f37">本地克隆</text>
+  <text x="716" y="218" font-size="11" fill="#57606a">D:\githubCode\&lt;owner&gt;\&lt;repo&gt;</text>
+  <text x="716" y="236" font-size="11" fill="#57606a">默认浅克隆 --depth 1</text>
+
+  <rect x="700" y="266" width="228" height="62" rx="8" fill="#ffffff" stroke="#9a6700" stroke-width="1.4"/>
+  <text x="716" y="290" font-size="12.5" font-weight="700" fill="#9a6700">DSH 工作区注册表</text>
+  <text x="716" y="312" font-size="11" fill="#57606a">标题取仓库名，会话以此为 cwd</text>
+
+  <!-- 浏览器 ↔ 宿主 -->
+  <line x1="308" y1="186" x2="340" y2="186" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="340" y1="216" x2="308" y2="216" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <text x="312" y="178" font-size="10.5" fill="#57606a">HTTP</text>
+  <text x="312" y="234" font-size="10.5" fill="#57606a">NDJSON</text>
+
+  <!-- 宿主 → 三个目标 -->
+  <line x1="640" y1="123" x2="696" y2="123" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="640" y1="210" x2="696" y2="210" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="640" y1="297" x2="696" y2="297" stroke="#57606a" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <text x="32" y="360" font-size="11" fill="#57606a">宿主直接调用 git，不经过 DSH 文件沙箱；因此提交 / 推送 / 变基 / 合并只在面板里由用户点击触发，agent 工具不提供这些动作。</text>
+  <text x="32" y="380" font-size="11" fill="#57606a">失败一律带原因回传，报错里的 token 会被抹成 ***。</text>
+</svg>

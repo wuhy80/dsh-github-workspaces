@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="788" viewBox="0 0 960 788" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif">
+  <rect width="960" height="788" fill="#eef1f4"/>
+
+  <!-- 面板页面 -->
+  <rect x="24" y="40" width="912" height="700" rx="12" fill="#ffffff" stroke="#d0d7de"/>
+
+  <!-- 页头 -->
+  <text x="48" y="78" font-size="15" font-weight="700" fill="#1f2328">GitHub 工作区</text>
+  <text x="48" y="98" font-size="11.5" fill="#57606a">每个 GitHub 仓库就是一个工作区，标题取仓库名</text>
+  <rect x="742" y="66" width="84" height="26" rx="7" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="754" y="83" font-size="11" fill="#24292f">网络自检</text>
+  <rect x="836" y="66" width="72" height="26" rx="7" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="856" y="83" font-size="11" fill="#24292f">刷新</text>
+  <line x1="24" y1="112" x2="936" y2="112" stroke="#d0d7de"/>
+
+  <!-- 环境条 -->
+  <rect x="48" y="126" width="112" height="22" rx="11" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="58" y="141" font-size="10.5" fill="#1a7f37">git 2.44.0</text>
+  <rect x="168" y="126" width="146" height="22" rx="11" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="178" y="141" font-size="10.5" fill="#1a7f37">token 来自环境变量</text>
+  <text x="326" y="141" font-size="10.5" fill="#57606a" font-family="ui-monospace, Consolas, monospace">D:\githubCode</text>
+
+  <!-- 打开仓库 -->
+  <rect x="48" y="164" width="864" height="152" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="64" y="186" font-size="10.5" font-weight="700" fill="#57606a">打开仓库</text>
+  <rect x="64" y="196" width="700" height="30" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="76" y="216" font-size="11" fill="#8c959f">owner/repo，或 https://github.com/owner/repo，或 git@github.com:owner/repo.git</text>
+  <rect x="772" y="196" width="124" height="30" rx="7" fill="#1f6feb"/>
+  <text x="822" y="216" font-size="11" fill="#ffffff" text-anchor="middle">打开</text>
+
+  <rect x="64" y="236" width="124" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="74" y="253" font-size="10.5" fill="#24292f">加载我的仓库</text>
+
+  <rect x="200" y="236" width="696" height="24" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="210" y="252" font-size="10.5" fill="#24292f">wuhy80/obsidian-vault</text>
+  <text x="380" y="252" font-size="9.5" fill="#57606a">public</text>
+  <text x="820" y="252" font-size="10" fill="#1f6feb">打开</text>
+
+  <rect x="200" y="268" width="696" height="24" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="210" y="284" font-size="10.5" fill="#24292f">wuhy80/llm-news-tracker</text>
+  <text x="380" y="284" font-size="9.5" fill="#9a6700">971 MB</text>
+  <text x="820" y="284" font-size="10" fill="#1f6feb">打开</text>
+
+  <!-- 工作区小节 -->
+  <text x="48" y="344" font-size="10.5" font-weight="700" fill="#57606a">已打开的工作区 · 2</text>
+  <rect x="690" y="330" width="90" height="24" rx="7" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="702" y="346" font-size="10.5" fill="#24292f">检查更新</text>
+  <rect x="788" y="330" width="90" height="24" rx="7" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="800" y="346" font-size="10.5" fill="#24292f">全部拉取</text>
+
+  <!-- 工作区卡片 -->
+  <rect x="48" y="364" width="864" height="356" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="64" y="392" font-size="13" font-weight="700" fill="#1f2328">dsh-github-workspaces</text>
+  <rect x="238" y="377" width="72" height="21" rx="10" fill="#ffffff" stroke="#1f6feb"/>
+  <text x="250" y="392" font-size="10" fill="#1f6feb">main ▾</text>
+  <rect x="318" y="377" width="70" height="21" rx="10" fill="#ffffff" stroke="#9a6700"/>
+  <text x="328" y="392" font-size="9.5" fill="#9a6700">2 个改动</text>
+  <rect x="396" y="377" width="62" height="21" rx="10" fill="#ffffff" stroke="#1a7f37"/>
+  <text x="406" y="392" font-size="9.5" fill="#1a7f37">落后 1</text>
+
+  <text x="64" y="418" font-size="10.5" fill="#57606a" font-family="ui-monospace, Consolas, monospace">D:\githubCode\wuhy80\dsh-github-workspaces</text>
+  <text x="64" y="436" font-size="10" fill="#57606a" font-family="ui-monospace, Consolas, monospace">7d8337a · 2026-10-21 · chore: 添加 MIT 许可证</text>
+
+  <!-- 操作行 -->
+  <rect x="64" y="448" width="62" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="76" y="465" font-size="10.5" fill="#24292f">拉取</text>
+  <rect x="134" y="448" width="62" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="146" y="465" font-size="10.5" fill="#24292f">推送</text>
+  <rect x="204" y="448" width="78" height="26" rx="7" fill="#ffffff" stroke="#1f6feb"/>
+  <text x="214" y="465" font-size="10.5" fill="#1f6feb">改动 2</text>
+  <rect x="290" y="448" width="84" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="300" y="465" font-size="10.5" fill="#24292f">打开目录</text>
+  <rect x="382" y="448" width="84" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="392" y="465" font-size="10.5" fill="#24292f">移除登记</text>
+
+  <!-- 改动面板（展开） -->
+  <line x1="64" y1="488" x2="896" y2="488" stroke="#d0d7de"/>
+  <rect x="64" y="498" width="12" height="12" rx="2" fill="#1f6feb"/>
+  <path d="M67 504 l3 3 l5 -6" stroke="#ffffff" stroke-width="1.6" fill="none"/>
+  <text x="84" y="508" font-size="10" fill="#57606a">全选 · 已选 2/3</text>
+
+  <rect x="64" y="518" width="11" height="11" rx="2" fill="#1f6feb"/>
+  <path d="M66.5 523.5 l2.5 2.5 l4 -5" stroke="#ffffff" stroke-width="1.5" fill="none"/>
+  <rect x="84" y="516" width="34" height="18" rx="9" fill="#ffffff" stroke="#9a6700"/>
+  <text x="91" y="529" font-size="9" fill="#9a6700">修改</text>
+  <text x="128" y="529" font-size="10.5" fill="#24292f">README.md</text>
+
+  <rect x="64" y="542" width="11" height="11" rx="2" fill="#1f6feb"/>
+  <path d="M66.5 547.5 l2.5 2.5 l4 -5" stroke="#ffffff" stroke-width="1.5" fill="none"/>
+  <rect x="84" y="540" width="44" height="18" rx="9" fill="#ffffff" stroke="#9a6700"/>
+  <text x="91" y="553" font-size="9" fill="#9a6700">未跟踪</text>
+  <text x="138" y="553" font-size="10.5" fill="#24292f">docs/architecture.svg</text>
+
+  <rect x="64" y="566" width="11" height="11" rx="2" fill="#ffffff" stroke="#8c959f"/>
+  <rect x="84" y="564" width="34" height="18" rx="9" fill="#ffffff" stroke="#8c959f"/>
+  <text x="91" y="577" font-size="9" fill="#57606a">删除</text>
+  <text x="128" y="577" font-size="10.5" fill="#8c959f">scratch.tmp</text>
+
+  <!-- diff 预览 -->
+  <rect x="64" y="594" width="832" height="86" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="76" y="612" font-size="9.5" fill="#57606a" font-family="ui-monospace, Consolas, monospace">@@ -10,2 +10,4 @@</text>
+  <text x="76" y="630" font-size="9.5" fill="#8c959f" font-family="ui-monospace, Consolas, monospace">  日常就三件事</text>
+  <text x="76" y="648" font-size="9.5" fill="#cf222e" font-family="ui-monospace, Consolas, monospace">- 旧的说明</text>
+  <text x="76" y="666" font-size="9.5" fill="#1a7f37" font-family="ui-monospace, Consolas, monospace">+ 新的说明（勾选后只提交这些文件）</text>
+
+  <!-- 提交行 -->
+  <rect x="64" y="690" width="596" height="26" rx="7" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="76" y="707" font-size="10.5" fill="#8c959f">提交信息（留空用时间戳）</text>
+  <rect x="668" y="690" width="228" height="26" rx="7" fill="#1f6feb"/>
+  <text x="782" y="707" font-size="10.5" fill="#ffffff" text-anchor="middle">提交并推送 2 个</text>
+
+  <text x="48" y="762" font-size="10.5" fill="#57606a">∗ 线框示意：实际配色跟随 DSH 主题（明 / 暗），分支面板、分叉与冲突块按状态出现。</text>
+</svg>
