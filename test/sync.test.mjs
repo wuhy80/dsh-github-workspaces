@@ -12,13 +12,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
 import { fetchArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
 import { run } from '../lib/proc.js'
+import { SettingsStore } from '../lib/store.js'
 
 /** 跑一条 git 命令，失败即抛。 */
 function git(args, cwd) {
@@ -124,4 +125,31 @@ test('parseStatusZ 认出中文路径、未跟踪与重命名（-z 的两段格�
   assert.equal(files[1].label, '未跟踪')
   assert.equal(files[2].renamedFrom, 'old.md')
   assert.equal(files[2].label, '重命名')
+})
+
+test('ensureCloneRoot 会把多级不存在的目录建出来', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'gw-store-'))
+  try {
+    const target = path.join(home, 'githubCode', 'a', 'b')
+    const store = new SettingsStore(home)
+    store.state.cloneRoot = target
+    assert.equal(existsSync(target), false)
+    assert.equal(store.ensureCloneRoot(), target)
+    assert.equal(existsSync(target), true)
+    // 幂等：已存在时再调一次也不报错
+    assert.equal(store.ensureCloneRoot(), target)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('ensureCloneRoot 在盘符不存在时给出可读报错', () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'gw-store-'))
+  try {
+    const store = new SettingsStore(home)
+    store.state.cloneRoot = 'Z:\\definitely-not-a-drive\\x'
+    assert.throws(() => store.ensureCloneRoot(), /无法创建克隆根目录/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 })

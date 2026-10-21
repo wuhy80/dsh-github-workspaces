@@ -55,6 +55,14 @@ export function apply(ctx) {
   const api = new GitHubApi(store)
   const opener = new WorkspaceOpener(ctx, store, git, api)
 
+  // 「没有就建立一个」：挂载时确保克隆根目录存在（失败只记日志，不阻塞插件）
+  try {
+    const root = store.ensureCloneRoot()
+    logMount(`clone root ready: ${root}`)
+  } catch (error) {
+    logMount(`clone root unavailable: ${describe(error)}`)
+  }
+
   // 数据通道
   ctx.effect(() => {
     const disposers = makeRoutes({ store, git, api, opener }).map((route) => ctx.webServer.register(route))

@@ -60,7 +60,7 @@
 | 字段 | 默认 | 含义 |
 |---|---|---|
 | `token` | 空 | GitHub PAT（列私有仓库、推送需要）；环境变量优先 |
-| `cloneRoot` | `~/dsh-github-workspaces` | 克隆根目录 |
+| `cloneRoot` | `D:\githubCode`（Windows）/ `~/dsh-github-workspaces` | 克隆根目录；不存在会自动创建 |
 | `network.mode` | `auto` | `auto` / `direct` / `mirror` / `proxy` / `ssh443` |
 | `network.mirror` | `https://ghfast.top/` | 镜像前缀 |
 | `network.proxy` | 空 | 本地代理（API 与 git 都用） |
