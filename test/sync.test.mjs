@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { fetchArgs, mergeArgs, trackingRef } from '../lib/git.js'
+import { fetchArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
 import { run } from '../lib/proc.js'
 
 /** 跑一条 git 命令，失败即抛。 */
@@ -113,4 +113,15 @@ test('AbortSignal 会杀掉进程并标记 aborted', async () => {
   const result = await pending
   assert.equal(result.aborted, true)
   assert.equal(result.timedOut, false)
+})
+
+test('parseStatusZ 认出中文路径、未跟踪与重命名（-z 的两段格式）', () => {
+  const raw = ' M 中文 文件.md\u0000?? new.txt\u0000R  new.md\u0000old.md\u0000'
+  const files = parseStatusZ(raw)
+  assert.deepEqual(files.map((file) => file.path), ['中文 文件.md', 'new.txt', 'new.md'])
+  assert.equal(files[0].label, '修改')
+  assert.equal(files[1].untracked, true)
+  assert.equal(files[1].label, '未跟踪')
+  assert.equal(files[2].renamedFrom, 'old.md')
+  assert.equal(files[2].label, '重命名')
 })

@@ -8,7 +8,10 @@
 - **侧边栏新增「GitHub 工作区」面板**（侧边栏图标 + 中央整页），`/api/dsh-github-workspaces` 提供数据。
 - **打开仓库 = 克隆 + 登记工作区**：克隆到 `<cloneRoot>/<owner>/<repo>`，然后
   `workspaceRegistry.create(path, 仓库名)`。标题只在新登记时使用，不会覆盖你手动改过的名字。
-- **已打开的仓库卡片**：分支、未提交改动数、待推 / 待拉提交数、HEAD 摘要；可拉取、提交并推送、打开目录、移除登记（保留文件）。
+- **已打开的仓库卡片**：分支、未提交改动数、待推 / 待拉提交数、HEAD 摘要；可拉取、**按文件勾选提交**、打开目录、移除登记（保留文件）。
+- **改动勾选 + 单文件 diff**：卡片上的「改动」展开文件列表（新增 / 修改 / 删除 / 重命名 / 未跟踪，重命名显示 `旧 → 新`），
+  点文件名看该文件的 diff（未跟踪文件回内容本身，二进制与大文件只给提示），勾选后只提交这些文件——不再是 `add -A` 一把梭。
+  提交与推送也走流式：暂存 → 提交 → 推送三段进度，可取消。
 - **长任务有进度、可取消**：克隆与拉取走 NDJSON 流，面板显示当前阶段（直连 / SSH-over-443 / 镜像 / 合并）与下载百分比，
   点「取消」会中止请求并由宿主杀掉 git 子进程。
 - **agent 工具 `github_workspace`**：`list | status | open | pull | diagnose | repos`。
@@ -75,7 +78,7 @@ lib/proc.js         子进程包装（超时 / 取消 / 进度）、git 与 curl
 lib/git.js          克隆/状态/拉取/提交推送/网络自检 + 策略降级
 lib/github.js       REST（仓库列表、身份）+ 仓库地址解析
 lib/opener.js       仓库 → 工作区（先克隆，再登记）
-lib/routes.js       /api/dsh-github-workspaces 路由族（loopback 门禁，open/pull 为 NDJSON 流）
+lib/routes.js       /api/dsh-github-workspaces 路由族（loopback 门禁；open/pull/commit 为 NDJSON 流）
 lib/tools.js        github_workspace 工具（标准 JSON Schema）
 client.js           浏览器半边：sidebar.panellist + main 面板（含进度条与取消）
 test/sync.test.mjs  同步路径回归测试（临时裸仓库，不碰网络）
@@ -95,7 +98,7 @@ node --test test/sync.test.mjs
 
 - 浅克隆的仓库没有完整历史；需要时可手动 `git fetch --unshallow`。
 - 镜像前缀只能读，推送必须直连或 SSH。
-- 提交仍是 `add -A` 一把梭：没有 diff 预览、不能勾选文件（下一批要做）。
+- diff 是纯文本展示（不做语法高亮/并排）；单文件超过 200 KB 会截断。
 - 面板不需要 Cordis Config schema（设置走自己的面板），所以插件详情页里没有配置表单。
 - 首次打开一个大仓库会慢；克隆超时 420 s，可随时取消。
 

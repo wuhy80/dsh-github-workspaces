@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-github-workspaces — 浏览器半边。
  *
  * 两处挂载，都走 ctx.slots.inject（壳层声明了座位才注册，加载顺序无关）：
@@ -36,6 +36,9 @@ window.__ModuleLoader__.load({
         'action.open': '打开',
         'action.pull': '拉取',
         'action.commit': '提交并推送',
+        'action.changes': '改动',
+        'action.hideChanges': '收起改动',
+        'action.commitSelected': '提交并推送',
         'action.reveal': '打开目录',
         'action.forget': '移除登记',
         'action.loadRepos': '加载我的仓库',
@@ -75,6 +78,9 @@ window.__ModuleLoader__.load({
         'action.open': 'Open',
         'action.pull': 'Pull',
         'action.commit': 'Commit & push',
+        'action.changes': 'Changes',
+        'action.hideChanges': 'Hide changes',
+        'action.commitSelected': 'Commit & push',
         'action.reveal': 'Open folder',
         'action.forget': 'Unregister',
         'action.loadRepos': 'Load my repositories',
@@ -396,9 +402,16 @@ window.__ModuleLoader__.load({
       }, options.map((option) => h('option', { key: option, value: option }, option)))
     }
 
-    /** 已打开工作区的卡片。 */
+    /** 已打开工作区的卡片：状态 + 改动勾选 + 单文件 diff 预览。 */
     function WorkspaceCard({ row, busy, onPull, onCommit, onReveal, onForget }) {
+      const [open, setOpen] = useState(false)
+      const [files, setFiles] = useState(null)
+      const [selected, setSelected] = useState({})
+      const [diff, setDiff] = useState(null)
       const [message, setMessage] = useState('')
+      const [innerBusy, setInnerBusy] = useState('')
+      const [problem, setProblem] = useState('')
+
       const flags = []
       if (row.exists === false) flags.push({ text: '目录缺失', tone: 'error' })
       if (row.dirty > 0) flags.push({ text: `${row.dirty} 个改动`, tone: 'warn' })
@@ -407,6 +420,54 @@ window.__ModuleLoader__.load({
       if (row.tracking === false) flags.push({ text: '无上游', tone: undefined })
       if (flags.length === 0 && row.exists !== false) flags.push({ text: '干净', tone: 'ok' })
 
+      /** 拉一次改动列表，默认全选并预览第一个文件。 */
+      const load = async () => {
+        setInnerBusy('list')
+        setProblem('')
+        try {
+          const payload = await call(`${API}/changes`, { repo: row.fullName })
+          const list = payload.files ?? []
+          setFiles(list)
+          const next = {}
+          for (const file of list) next[file.path] = true
+          setSelected(next)
+          if (list.length > 0) void showDiff(list[0].path)
+        } catch (error) {
+          setProblem(errorText(error))
+        } finally {
+          setInnerBusy('')
+        }
+      }
+
+      /** 加载单个文件的 diff。 */
+      const showDiff = async (filePath) => {
+        setDiff({ path: filePath, text: '加载中…', kind: '' })
+        try {
+          const payload = await call(`${API}/diff`, { repo: row.fullName, path: filePath })
+          setDiff({ path: payload.path ?? filePath, text: payload.text ?? '', kind: payload.kind })
+        } catch (error) {
+          setDiff({ path: filePath, text: errorText(error), kind: 'error' })
+        }
+      }
+
+      const toggle = () => {
+        if (open) {
+          setOpen(false)
+          return
+        }
+        setOpen(true)
+        void load()
+      }
+
+      const list = files ?? []
+      const chosen = list.filter((file) => selected[file.path] === true).map((file) => file.path)
+      const allChosen = list.length > 0 && chosen.length === list.length
+      const toggleAll = () => {
+        const next = {}
+        for (const file of list) next[file.path] = !allChosen
+        setSelected(next)
+      }
+
       return h('div', { style: { ...S.card, display: 'flex', flexDirection: 'column', gap: 8 } }, [
         h('div', { key: 'head', style: S.row }, [
           h('div', { key: 'name', style: { ...S.grow, display: 'flex', alignItems: 'center', gap: 8 } }, [
@@ -414,6 +475,11 @@ window.__ModuleLoader__.load({
             h(Chip, { key: 'b', tone: row.exists === false ? 'error' : undefined }, row.branch === '' ? '—' : row.branch),
             ...flags.map((flag, index) => h(Chip, { key: `f${index}`, tone: flag.tone }, flag.text)),
           ]),
+          h(Button, {
+            key: 'changes',
+            onClick: toggle,
+            disabled: busy || row.exists === false,
+          }, open ? t('action.hideChanges', '收起改动') : `${t('action.changes', '改动')} ${row.dirty > 0 ? row.dirty : ''}`.trim()),
           h(Button, { key: 'reveal', onClick: () => onReveal(row), disabled: busy }, t('action.reveal', '打开目录')),
           h(Button, { key: 'forget', onClick: () => onForget(row), disabled: busy }, t('action.forget', '移除登记')),
         ]),
@@ -423,14 +489,64 @@ window.__ModuleLoader__.load({
           : null,
         h('div', { key: 'ops', style: S.row }, [
           h(Button, { key: 'pull', onClick: () => onPull(row), disabled: busy, primary: row.behind > 0 }, busy ? '…' : t('action.pull', '拉取')),
-          h(Input, {
-            key: 'msg',
-            value: message,
-            onChange: setMessage,
-            placeholder: t('hint.commit', '提交信息（留空用时间戳）'),
-          }),
-          h(Button, { key: 'commit', onClick: () => onCommit(row, message), disabled: busy || row.dirty === 0, primary: row.dirty > 0 }, t('action.commit', '提交并推送')),
         ]),
+
+        open ? h('div', {
+          key: 'panel',
+          style: { display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8 },
+        }, [
+          problem === '' ? null : h('div', { key: 'p', style: { ...S.banner, color: 'var(--dsw-alias-state-error-primary)' } }, problem),
+          innerBusy === 'list'
+            ? h('div', { key: 'loading', style: S.mono }, t('state.loading', '加载中…'))
+            : list.length === 0
+              ? h('div', { key: 'empty', style: S.mono }, '没有未提交的改动')
+              : h('div', { key: 'files', style: { display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 220, overflow: 'auto' } }, [
+                h('div', { key: 'all', style: { ...S.row, gap: 6 } }, [
+                  h('input', { key: 'c', type: 'checkbox', checked: allChosen, onChange: toggleAll }),
+                  h('span', { key: 'l', style: S.fieldLabel }, `全选 · 已选 ${chosen.length}/${list.length}`),
+                ]),
+                ...list.map((file) => h('div', { key: file.path, style: { ...S.row, gap: 6, padding: '2px 0' } }, [
+                  h('input', {
+                    key: 'c',
+                    type: 'checkbox',
+                    checked: selected[file.path] === true,
+                    onChange: () => setSelected({ ...selected, [file.path]: selected[file.path] !== true }),
+                  }),
+                  h(Chip, { key: 's', tone: file.untracked === true ? 'warn' : undefined }, file.label),
+                  h('span', {
+                    key: 'p',
+                    style: { ...S.grow, cursor: 'pointer', textDecoration: diff !== null && diff.path === file.path ? 'underline' : 'none' },
+                    onClick: () => showDiff(file.path),
+                  }, file.renamedFrom === undefined ? file.path : `${file.renamedFrom} → ${file.path}`),
+                ])),
+              ]),
+          diff === null
+            ? null
+            : h('pre', {
+              key: 'diff',
+              style: {
+                margin: 0,
+                padding: 10,
+                borderRadius: 8,
+                background: 'var(--dsw-alias-bg-layer-2)',
+                color: 'var(--dsw-alias-label-secondary)',
+                maxHeight: 300,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                fontSize: 11,
+              },
+            }, diff.text === '' ? '（无差异内容）' : diff.text),
+          h('div', { key: 'commit', style: S.row }, [
+            h(Input, { key: 'm', value: message, onChange: setMessage, placeholder: t('hint.commit', '提交信息（留空用时间戳）') }),
+            h(Button, {
+              key: 'go',
+              primary: true,
+              disabled: busy || chosen.length === 0,
+              onClick: () => onCommit(row, message, chosen),
+            }, `${t('action.commitSelected', '提交并推送')} ${chosen.length} 个`),
+          ]),
+        ]) : null,
       ])
     }
 
@@ -582,10 +698,24 @@ window.__ModuleLoader__.load({
         }
       })
 
-      const commit = (row, message) => run(`commit:${row.fullName}`, async () => {
-        const payload = await call(`${API}/commit`, { repo: row.fullName, message })
-        setNotice(`${row.fullName}：${payload.committed === true ? '已提交' : '无新改动'}${payload.pushed === true ? '并已推送' : ''}（${payload.branch}）`)
-        await refresh()
+      const commit = (row, message, paths) => run(`commit:${row.fullName}`, async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        const count = Array.isArray(paths) ? paths.length : 0
+        setStage({ text: `准备提交 ${count} 个文件…`, percent: null })
+        try {
+          const payload = await streamCall(`${API}/commit`, { repo: row.fullName, message, paths }, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          setNotice(`${row.fullName}：已提交 ${payload.files ?? count} 个文件并推送（${payload.branch}）`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
       })
 
       const reveal = (row) => run(`reveal:${row.fullName}`, async () => {
