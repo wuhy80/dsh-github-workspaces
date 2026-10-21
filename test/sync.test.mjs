@@ -226,3 +226,67 @@ function setupConflict() {
   git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'local'], clone)
   return { root, bare, work, clone, url, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
+
+test('分支：新建、列表、切回、安全删除，并拒绝删除当前分支', async () => {
+  const env = setup()
+  const runner = new GitRunner(new SettingsStore(env.root))
+  try {
+    const created = await runner.checkout(env.clone, 'feature-x', { create: true })
+    assert.equal(created.ok, true)
+    assert.equal(created.branch, 'feature-x')
+
+    const listed = await runner.branches(env.clone)
+    assert.equal(listed.ok, true)
+    assert.equal(listed.current, 'feature-x')
+    assert.equal(listed.detached, false)
+    assert.deepEqual(listed.local.map((item) => item.name).sort(), ['feature-x', 'main'])
+    assert.equal(listed.local.find((item) => item.current === true).name, 'feature-x')
+
+    const refusedCurrent = await runner.deleteBranch(env.clone, 'feature-x')
+    assert.equal(refusedCurrent.ok, false)
+    assert.match(refusedCurrent.error, /当前/)
+
+    const back = await runner.checkout(env.clone, 'main')
+    assert.equal(back.ok, true)
+    assert.equal((await runner.deleteBranch(env.clone, 'feature-x')).ok, true)
+    assert.deepEqual((await runner.branches(env.clone)).local.map((item) => item.name), ['main'])
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('游离 HEAD 能被识别，并靠检出分支救回来', async () => {
+  const env = setup()
+  const runner = new GitRunner(new SettingsStore(env.root))
+  try {
+    git(['checkout', '--detach', 'HEAD'], env.clone)
+    const detached = await runner.branches(env.clone)
+    assert.equal(detached.detached, true)
+    assert.equal(detached.current, '')
+
+    const rescued = await runner.checkout(env.clone, 'main')
+    assert.equal(rescued.ok, true)
+    assert.equal(rescued.branch, 'main')
+    assert.equal((await runner.branches(env.clone)).detached, false)
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('有未合并提交的分支不会被安全删除', async () => {
+  const env = setup()
+  const runner = new GitRunner(new SettingsStore(env.root))
+  try {
+    await runner.checkout(env.clone, 'topic', { create: true })
+    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'topic-work'], env.clone)
+    await runner.checkout(env.clone, 'main')
+
+    const refused = await runner.deleteBranch(env.clone, 'topic')
+    assert.equal(refused.ok, false)
+    assert.match(refused.error, /未合并/)
+    // 分支仍在
+    assert.equal((await runner.branches(env.clone)).local.some((item) => item.name === 'topic'), true)
+  } finally {
+    env.cleanup()
+  }
+})

@@ -40,6 +40,12 @@ window.__ModuleLoader__.load({
         'action.merge': '合并远端',
         'action.continueIntegration': '继续',
         'action.abortIntegration': '中止整合',
+        'action.switch': '切换',
+        'action.deleteBranch': '删除',
+        'action.createBranch': '新建并切换',
+        'action.trackBranch': '检出',
+        'hint.branches': '切换 / 新建分支',
+        'hint.newBranch': '新分支名（从当前 HEAD 建）',
         'action.commit': '提交并推送',
         'action.changes': '改动',
         'action.hideChanges': '收起改动',
@@ -87,6 +93,12 @@ window.__ModuleLoader__.load({
         'action.merge': 'Merge remote',
         'action.continueIntegration': 'Continue',
         'action.abortIntegration': 'Abort',
+        'action.switch': 'Switch',
+        'action.deleteBranch': 'Delete',
+        'action.createBranch': 'Create & switch',
+        'action.trackBranch': 'Check out',
+        'hint.branches': 'Switch / create branch',
+        'hint.newBranch': 'New branch name (from current HEAD)',
         'action.commit': 'Commit & push',
         'action.changes': 'Changes',
         'action.hideChanges': 'Hide changes',
@@ -412,8 +424,13 @@ window.__ModuleLoader__.load({
       }, options.map((option) => h('option', { key: option, value: option }, option)))
     }
 
-    /** 已打开工作区的卡片：状态 + 改动勾选 + 单文件 diff 预览。 */
-    function WorkspaceCard({ row, busy, onPull, onPush, onIntegrate, onAbort, onContinue, onCommit, onReveal, onForget }) {
+    /** 已打开工作区的卡片：状态 + 分支 + 改动勾选 + 单文件 diff 预览。 */
+    function WorkspaceCard({ row, busy, onPull, onPush, onIntegrate, onAbort, onContinue, onCommit, onCheckout, onDeleteBranch, onReveal, onForget }) {
+      const [branchOpen, setBranchOpen] = useState(false)
+      const [branches, setBranches] = useState(null)
+      const [newBranch, setNewBranch] = useState('')
+      const [branchBusy, setBranchBusy] = useState('')
+      const [branchProblem, setBranchProblem] = useState('')
       const [open, setOpen] = useState(false)
       const [files, setFiles] = useState(null)
       const [selected, setSelected] = useState({})
@@ -460,6 +477,34 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /** 拉一次分支列表。 */
+      const loadBranches = async () => {
+        setBranchBusy('list')
+        setBranchProblem('')
+        try {
+          setBranches(await call(`${API}/branches`, { repo: row.fullName }))
+        } catch (error) {
+          setBranchProblem(errorText(error))
+        } finally {
+          setBranchBusy('')
+        }
+      }
+
+      /** 展开/收起分支面板。 */
+      const toggleBranches = () => {
+        if (branchOpen) {
+          setBranchOpen(false)
+          return
+        }
+        setBranchOpen(true)
+        void loadBranches()
+      }
+
+      // 切换分支后 row.branch 会变，面板开着就重载一次列表
+      useEffect(() => {
+        if (branchOpen) void loadBranches()
+      }, [row.branch])
+
       const toggle = () => {
         if (open) {
           setOpen(false)
@@ -482,16 +527,19 @@ window.__ModuleLoader__.load({
         h('div', { key: 'head', style: S.row }, [
           h('div', { key: 'name', style: { ...S.grow, display: 'flex', alignItems: 'center', gap: 8 } }, [
             h('strong', { key: 't', style: { fontSize: 13 } }, row.title),
-            h(Chip, { key: 'b', tone: row.exists === false ? 'error' : undefined }, row.branch === '' ? '—' : row.branch),
+            // 分支入口：点名当前分支（游离头时明确警告），点开就是分支面板
+            h('span', {
+              key: 'b',
+              title: t('hint.branches', '切换 / 新建分支'),
+              onClick: toggleBranches,
+              style: {
+                ...S.chip,
+                cursor: 'pointer',
+                color: row.branch === '' ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-label-secondary)',
+              },
+            }, `${row.branch === '' ? '游离 HEAD' : row.branch} ▾`),
             ...flags.map((flag, index) => h(Chip, { key: `f${index}`, tone: flag.tone }, flag.text)),
           ]),
-          h(Button, {
-            key: 'changes',
-            onClick: toggle,
-            disabled: busy || row.exists === false,
-          }, open ? t('action.hideChanges', '收起改动') : `${t('action.changes', '改动')} ${row.dirty > 0 ? row.dirty : ''}`.trim()),
-          h(Button, { key: 'reveal', onClick: () => onReveal(row), disabled: busy }, t('action.reveal', '打开目录')),
-          h(Button, { key: 'forget', onClick: () => onForget(row), disabled: busy }, t('action.forget', '移除登记')),
         ]),
         h('div', { key: 'path', style: S.mono }, row.path),
         row.head !== undefined && row.head !== null && typeof row.head.subject === 'string' && row.head.subject !== ''
@@ -500,7 +548,58 @@ window.__ModuleLoader__.load({
         h('div', { key: 'ops', style: S.row }, [
           h(Button, { key: 'pull', onClick: () => onPull(row), disabled: busy, primary: row.behind > 0 }, busy ? '…' : t('action.pull', '拉取')),
           h(Button, { key: 'push', onClick: () => onPush(row), disabled: busy || !(row.ahead > 0) }, `${t('action.push', '推送')} ${row.ahead > 0 ? row.ahead : ''}`.trim()),
+          h(Button, {
+            key: 'changes',
+            onClick: toggle,
+            disabled: busy || row.exists === false,
+          }, open ? t('action.hideChanges', '收起改动') : `${t('action.changes', '改动')} ${row.dirty > 0 ? row.dirty : ''}`.trim()),
+          h(Button, { key: 'reveal', onClick: () => onReveal(row), disabled: busy }, t('action.reveal', '打开目录')),
+          h(Button, { key: 'forget', onClick: () => onForget(row), disabled: busy }, t('action.forget', '移除登记')),
         ]),
+
+        // 分支面板
+        branchOpen ? h('div', {
+          key: 'branchPanel',
+          style: { display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8 },
+        }, [
+          branchProblem === '' ? null : h('div', { key: 'p', style: { ...S.banner, color: 'var(--dsw-alias-state-error-primary)' } }, branchProblem),
+          h('div', { key: 'newRow', style: S.row }, [
+            h(Input, { key: 'n', value: newBranch, onChange: setNewBranch, placeholder: t('hint.newBranch', '新分支名（从当前 HEAD 建）') }),
+            h(Button, {
+              key: 'c',
+              onClick: () => { const name = newBranch.trim(); if (name !== '') { onCheckout(row, name, true); setNewBranch('') } },
+              disabled: busy || branchBusy !== '' || newBranch.trim() === '',
+            }, t('action.createBranch', '新建并切换')),
+          ]),
+          branchBusy === 'list'
+            ? h('div', { key: 'loading', style: S.mono }, t('state.loading', '加载中…'))
+            : null,
+          branches === null || branches.local.length === 0
+            ? null
+            : h('div', { key: 'local', style: { display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 180, overflow: 'auto' } }, [
+              h('div', { key: 'lt', style: S.fieldLabel }, `本地分支（${branches.local.length}）`),
+              ...branches.local.map((item) => h('div', { key: item.name, style: { ...S.row, gap: 6 } }, [
+                h('span', { key: 'n', style: { ...S.grow, fontWeight: item.current === true ? 600 : 400 } }, item.current === true ? `${item.name} · 当前` : item.name),
+                item.track === '' ? null : h('span', { key: 't', style: S.mono }, item.track),
+                h(Button, { key: 's', onClick: () => onCheckout(row, item.name, false), disabled: busy || branchBusy !== '' || item.current === true }, t('action.switch', '切换')),
+                item.current === true ? null : h(Button, { key: 'd', onClick: () => onDeleteBranch(row, item.name), disabled: busy || branchBusy !== '' }, t('action.deleteBranch', '删除')),
+              ])),
+            ]),
+          branches === null || branches.remote.length === 0
+            ? null
+            : h('div', { key: 'remote', style: { display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 140, overflow: 'auto' } }, [
+              h('div', { key: 'rt', style: S.fieldLabel }, `远端分支（${branches.remote.length}）`),
+              ...branches.remote.map((item) => h('div', { key: item.name, style: { ...S.row, gap: 6 } }, [
+                h('span', { key: 'n', style: S.grow }, item.name),
+                h(Button, {
+                  key: 's',
+                  onClick: () => onCheckout(row, item.name, false),
+                  disabled: busy || branchBusy !== '' || item.hasLocal === true,
+                  title: item.hasLocal === true ? '本地已有同名分支' : '检出为本地跟踪分支',
+                }, t('action.trackBranch', '检出')),
+              ])),
+            ]),
+        ]) : null,
 
         // 停在 rebase/merge 中间态：给「继续」和「中止」两条出路
         row.state !== undefined && row.state !== 'clean'
@@ -790,6 +889,20 @@ window.__ModuleLoader__.load({
         await refresh()
       })
 
+      /** 切换分支 / 从当前 HEAD 新建分支 / 检出远端分支。 */
+      const checkout = (row, name, create) => run(`checkout:${row.fullName}`, async () => {
+        await call(`${API}/checkout`, { repo: row.fullName, name, create: create === true })
+        setNotice(`${row.fullName}：已切换到 ${name}`)
+        await refresh()
+      })
+
+      /** 删除本地分支（宿主只做安全删除）。 */
+      const deleteBranch = (row, name) => run(`branch-delete:${row.fullName}`, async () => {
+        await call(`${API}/branch-delete`, { repo: row.fullName, name })
+        setNotice(`${row.fullName}：已删除本地分支 ${name}`)
+        await refresh()
+      })
+
       const commit = (row, message, paths) => run(`commit:${row.fullName}`, async () => {
         const controller = new AbortController()
         abortRef.current = controller
@@ -966,6 +1079,8 @@ window.__ModuleLoader__.load({
                 onAbort: abortInt,
                 onContinue: continueInt,
                 onCommit: commit,
+                onCheckout: checkout,
+                onDeleteBranch: deleteBranch,
                 onReveal: reveal,
                 onForget: forget,
               })),
