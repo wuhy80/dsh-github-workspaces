@@ -46,6 +46,9 @@ window.__ModuleLoader__.load({
         'action.trackBranch': '检出',
         'action.checkUpdates': '检查更新',
         'action.pullAll': '全部拉取',
+        'action.import': '导入',
+        'action.probeProxy': '探测',
+        'import.title': '或：导入浏览器下载的归档（没有 git 历史，只读快照）',
         'hint.branches': '切换 / 新建分支',
         'hint.newBranch': '新分支名（从当前 HEAD 建）',
         'hint.openPanel': '打开 GitHub 工作区面板',
@@ -102,6 +105,9 @@ window.__ModuleLoader__.load({
         'action.trackBranch': 'Check out',
         'action.checkUpdates': 'Check updates',
         'action.pullAll': 'Pull all',
+        'action.import': 'Import',
+        'action.probeProxy': 'Probe',
+        'import.title': 'Or import an archive downloaded in your browser (no git history, read-only)',
         'hint.branches': 'Switch / create branch',
         'hint.newBranch': 'New branch name (from current HEAD)',
         'hint.openPanel': 'Open the GitHub workspaces panel',
@@ -300,22 +306,11 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 一次 NDJSON 流式调用（克隆/拉取）。
-     *
-     * 逐帧回调 `onFrame(frame)`，帧类型：stage / progress / result。
-     * result 帧的 payload.ok === false 时抛错（带上 payload）。
-     * @param {string} path - 接口路径。
-     * @param {object} body - 请求体。
-     * @param {{onFrame?: Function, signal?: AbortSignal}} [options]
+     * 读一段 NDJSON 响应：逐帧回调，返回 result 帧的 payload。
+     * @param {Response} response - fetch 的响应。
+     * @param {Function} [onFrame] - 非 result 帧的回调。
      */
-    async function streamCall(path, body, options = {}) {
-      const { onFrame, signal } = options
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body ?? {}),
-        signal,
-      })
+    async function readNdjson(response, onFrame) {
       if (!response.ok || response.body === null) {
         let text = ''
         try {
@@ -363,6 +358,44 @@ window.__ModuleLoader__.load({
         throw error
       }
       return final.payload ?? { ok: true }
+    }
+
+    /**
+     * 一次 NDJSON 流式调用（克隆/拉取/整合/推送/提交）。
+     * @param {string} path - 接口路径。
+     * @param {object} body - 请求体。
+     * @param {{onFrame?: Function, signal?: AbortSignal}} [options]
+     */
+    async function streamCall(path, body, options = {}) {
+      const { onFrame, signal } = options
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+        signal,
+      })
+      return readNdjson(response, onFrame)
+    }
+
+    /**
+     * 把浏览器里选的归档文件 POST 给宿主（归档导入）。
+     * @param {string} path - 带 query 的导入地址。
+     * @param {File} file - 文件对象。
+     * @param {{onFrame?: Function, signal?: AbortSignal}} [options]
+     */
+    async function streamUpload(path, file, options = {}) {
+      const { onFrame, signal } = options
+      const response = await fetch(path, { method: 'POST', body: file, signal })
+      return readNdjson(response, onFrame)
+    }
+
+    /** 从归档文件名猜仓库名（服务端也会校验，这里只是预填）。 */
+    function guessRepoFromFile(name) {
+      const base = String(name ?? '').replace(/\.(zip|tar\.gz|tgz|tar)$/i, '')
+      const matched = /^(.+)-(main|master|trunk|develop|dev|HEAD)$/i.exec(base)
+      if (matched !== null) return matched[1]
+      const dash = base.lastIndexOf('-')
+      return dash > 0 ? base.slice(0, dash) : base
     }
 
     /** 打开后把 GUI 切到那个工作区（服务不可用就静默放弃）。 */
@@ -447,10 +480,11 @@ window.__ModuleLoader__.load({
 
       const flags = []
       if (row.exists === false) flags.push({ text: '目录缺失', tone: 'error' })
+      if (row.snapshot === true) flags.push({ text: '无 git 历史', tone: 'warn' })
       if (row.dirty > 0) flags.push({ text: `${row.dirty} 个改动`, tone: 'warn' })
       if (row.ahead > 0) flags.push({ text: `待推 ${row.ahead}`, tone: 'warn' })
       if (row.behind > 0) flags.push({ text: `待拉 ${row.behind}`, tone: 'ok' })
-      if (row.tracking === false) flags.push({ text: '无上游', tone: undefined })
+      if (row.tracking === false && row.snapshot !== true) flags.push({ text: '无上游', tone: undefined })
       if (flags.length === 0 && row.exists !== false) flags.push({ text: '干净', tone: 'ok' })
 
       /** 拉一次改动列表，默认全选并预览第一个文件。 */
@@ -536,14 +570,16 @@ window.__ModuleLoader__.load({
             // 分支入口：点名当前分支（游离头时明确警告），点开就是分支面板
             h('span', {
               key: 'b',
-              title: t('hint.branches', '切换 / 新建分支'),
-              onClick: toggleBranches,
+              title: row.snapshot === true ? '从归档导入的只读快照：没有 git 历史' : t('hint.branches', '切换 / 新建分支'),
+              onClick: row.snapshot === true ? undefined : toggleBranches,
               style: {
                 ...S.chip,
-                cursor: 'pointer',
-                color: row.branch === '' ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-label-secondary)',
+                cursor: row.snapshot === true ? 'default' : 'pointer',
+                color: row.snapshot === true || row.branch === ''
+                  ? 'var(--dsw-alias-state-warn-primary)'
+                  : 'var(--dsw-alias-label-secondary)',
               },
-            }, `${row.branch === '' ? '游离 HEAD' : row.branch} ▾`),
+            }, row.snapshot === true ? '只读快照' : `${row.branch === '' ? '游离 HEAD' : row.branch} ▾`),
             ...flags.map((flag, index) => h(Chip, { key: `f${index}`, tone: flag.tone }, flag.text)),
           ]),
         ]),
@@ -552,12 +588,12 @@ window.__ModuleLoader__.load({
           ? h('div', { key: 'headline', style: S.mono }, `${row.head.sha} · ${row.head.date} · ${row.head.subject}`)
           : null,
         h('div', { key: 'ops', style: S.row }, [
-          h(Button, { key: 'pull', onClick: () => onPull(row), disabled: busy, primary: row.behind > 0 }, busy ? '…' : t('action.pull', '拉取')),
-          h(Button, { key: 'push', onClick: () => onPush(row), disabled: busy || !(row.ahead > 0) }, `${t('action.push', '推送')} ${row.ahead > 0 ? row.ahead : ''}`.trim()),
+          h(Button, { key: 'pull', onClick: () => onPull(row), disabled: busy || row.snapshot === true, primary: row.behind > 0 }, busy ? '…' : t('action.pull', '拉取')),
+          h(Button, { key: 'push', onClick: () => onPush(row), disabled: busy || row.snapshot === true || !(row.ahead > 0) }, `${t('action.push', '推送')} ${row.ahead > 0 ? row.ahead : ''}`.trim()),
           h(Button, {
             key: 'changes',
             onClick: toggle,
-            disabled: busy || row.exists === false,
+            disabled: busy || row.exists === false || row.snapshot === true,
           }, open ? t('action.hideChanges', '收起改动') : `${t('action.changes', '改动')} ${row.dirty > 0 ? row.dirty : ''}`.trim()),
           h(Button, { key: 'reveal', onClick: () => onReveal(row), disabled: busy }, t('action.reveal', '打开目录')),
           h(Button, { key: 'forget', onClick: () => onForget(row), disabled: busy }, t('action.forget', '移除登记')),
@@ -696,7 +732,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 设置卡。 */
-    function SettingsCard({ draft, settings, busy, onChange, onSave }) {
+    function SettingsCard({ draft, settings, busy, proxies, onChange, onSave, onProbe }) {
       const update = (patch) => onChange({ ...draft, ...patch })
       const updateNetwork = (patch) => onChange({ ...draft, network: { ...draft.network, ...patch } })
       const updateAuthor = (patch) => onChange({ ...draft, author: { ...draft.author, ...patch } })
@@ -723,8 +759,24 @@ window.__ModuleLoader__.load({
             h(Input, { key: 'i', value: draft.network.mirror, onChange: (value) => updateNetwork({ mirror: value }) }),
           ]),
         ]),
-        h(Field, { key: 'proxy', label: t('label.proxy', '本地代理（如 http://127.0.0.1:7890）') },
-          h(Input, { value: draft.network.proxy, onChange: (value) => updateNetwork({ proxy: value }) })),
+        h('div', { key: 'proxyRow', style: S.row }, [
+          h('div', { key: 'p', style: { flex: 1, minWidth: 0 } },
+            h(Field, { label: t('label.proxy', '本地代理（如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080）') },
+              h(Input, { value: draft.network.proxy, onChange: (value) => updateNetwork({ proxy: value }) }))),
+          h('div', { key: 'b', style: { flex: '0 0 auto', paddingTop: 14 } }, [
+            h(Button, { key: 'probe', onClick: () => onProbe(), disabled: busy }, t('action.probeProxy', '探测')),
+          ]),
+        ]),
+        proxies === null
+          ? null
+          : h('div', { key: 'proxies', style: { ...S.wrap, marginBottom: 10 } }, proxies.length === 0
+            ? [h('span', { key: 'none', style: S.mono }, '没有发现本地代理端口')]
+            : proxies.map((item) => h('button', {
+              key: item.port,
+              type: 'button',
+              onClick: () => updateNetwork({ proxy: `${item.scheme}://127.0.0.1:${item.port}` }),
+              style: { ...S.chip, cursor: 'pointer', background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)' },
+            }, `${item.kind} · 127.0.0.1:${item.port}`))),
         h(Field, { key: 'api', label: t('label.apiBase', 'API 基址') },
           h(Input, { value: draft.network.apiBase, onChange: (value) => updateNetwork({ apiBase: value }) })),
         h('div', { key: 'author', style: S.row }, [
@@ -750,6 +802,11 @@ window.__ModuleLoader__.load({
       const [urlInput, setUrlInput] = useState('')
       const [diag, setDiag] = useState(null)
       const [diagOpen, setDiagOpen] = useState(false)
+      /** 归档导入：选中的文件与目标 owner/repo。 */
+      const [importFile, setImportFile] = useState(null)
+      const [importRepo, setImportRepo] = useState('')
+      /** 探测到的本地代理候选。 */
+      const [proxies, setProxies] = useState(null)
       /** 正在跑的流式操作（克隆/拉取）的阶段与百分比；null 表示没有。 */
       const [stage, setStage] = useState(null)
       /** 当前可取消操作的 AbortController。 */
@@ -942,6 +999,38 @@ window.__ModuleLoader__.load({
         }
       })
 
+      /** 归档导入：把浏览器下载的 zip 交给宿主解压并登记为只读快照。 */
+      const importArchive = (file, repoName) => run('import', async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: '接收归档…', percent: null })
+        try {
+          const query = `?repo=${encodeURIComponent(repoName)}&name=${encodeURIComponent(file.name)}`
+          const payload = await streamUpload(`${API}/import${query}`, file, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          setNotice(`已导入 ${payload.fullName}（只读快照，${payload.entries ?? 0} 个顶层条目）`)
+          setImportFile(null)
+          setImportRepo('')
+          await refresh()
+          jumpToWorkspace(payload.workspaceId)
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
+      /** 探测本地代理端口（只连 127.0.0.1）。 */
+      const probeProxy = () => run('probe', async () => {
+        const payload = await call(`${API}/proxy-probe`)
+        const list = payload.candidates ?? []
+        setProxies(list)
+        setNotice(list.length === 0 ? '没有探测到本地代理端口' : `探测到 ${list.length} 个本地端口，点一下即可填入`)
+      })
+
       /** 切换分支 / 从当前 HEAD 新建分支 / 检出远端分支。 */
       const checkout = (row, name, create) => run(`checkout:${row.fullName}`, async () => {
         await call(`${API}/checkout`, { repo: row.fullName, name, create: create === true })
@@ -1116,6 +1205,36 @@ window.__ModuleLoader__.load({
                   h(Button, { key: 'o', onClick: () => openRepo(repo.fullName), disabled: busy !== '' }, t('action.open', '打开')),
                 ]))),
             ]),
+
+            // 归档导入：网络拉不下来时，用浏览器下载 zip 再拿进来
+            h('div', { key: 'import', style: { marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--dsw-alias-border-l1)', display: 'flex', flexDirection: 'column', gap: 6 } }, [
+              h('div', { key: 'lb', style: S.fieldLabel }, t('import.title', '或：导入浏览器下载的归档（没有 git 历史，只读快照）')),
+              h('div', { key: 'row', style: S.row }, [
+                h('input', {
+                  key: 'file',
+                  type: 'file',
+                  accept: '.zip,.tar.gz,.tgz,.tar',
+                  onChange: (event) => {
+                    const picked = event.target.files !== null && event.target.files.length > 0 ? event.target.files[0] : null
+                    setImportFile(picked)
+                    if (picked !== null) setImportRepo(guessRepoFromFile(picked.name))
+                  },
+                  style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)', maxWidth: 260 },
+                }),
+                h(Input, {
+                  key: 'repo',
+                  value: importRepo,
+                  onChange: setImportRepo,
+                  placeholder: 'owner/repo',
+                }),
+                h(Button, {
+                  key: 'go',
+                  primary: true,
+                  onClick: () => { if (importFile !== null) void importArchive(importFile, importRepo.trim()) },
+                  disabled: busy !== '' || importFile === null || importRepo.trim() === '',
+                }, t('action.import', '导入')),
+              ]),
+            ]),
           ]),
 
           h('div', { key: 'spaces', style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
@@ -1152,8 +1271,10 @@ window.__ModuleLoader__.load({
               draft,
               settings,
               busy: busy !== '',
+              proxies,
               onChange: setDraft,
               onSave: save,
+              onProbe: probeProxy,
             }),
         ]),
       ])

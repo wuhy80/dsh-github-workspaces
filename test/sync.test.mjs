@@ -12,10 +12,15 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+
+import { archiveKind, countEscapes, extractArchive, guessRepoName, unwrapSingleDirectory } from '../lib/archive.js'
+import { WorkspaceOpener } from '../lib/opener.js'
+import { probePort } from '../lib/proxy-probe.js'
 
 import { GitRunner, fetchArgs, integrateArgs, mergeArgs, parseStatusZ, trackingRef } from '../lib/git.js'
 import { run } from '../lib/proc.js'
@@ -322,5 +327,84 @@ test('summarize 一条命令拿到分支/ahead/behind/改动数', async () => {
     assert.equal(summary.branch, '')
   } finally {
     env.cleanup()
+  }
+})
+
+test('归档：类型识别与仓库名推测', () => {
+  assert.equal(archiveKind('a.zip'), 'zip')
+  assert.equal(archiveKind('a.TAR.GZ'), 'tar.gz')
+  assert.equal(archiveKind('a.tgz'), 'tar.gz')
+  assert.equal(archiveKind('a.7z'), '')
+  assert.equal(guessRepoName('obsidian-vault-main.zip'), 'obsidian-vault')
+  assert.equal(guessRepoName('Hello-World-master.tar.gz'), 'Hello-World')
+  assert.equal(guessRepoName('dsh-github-workspaces-main.zip'), 'dsh-github-workspaces')
+})
+
+test('归档解压：单层目录会被摊平，且无越界条目', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'gw-archive-'))
+  try {
+    const src = path.join(root, 'src')
+    mkdirSync(path.join(src, 'repo-main'), { recursive: true })
+    writeFileSync(path.join(src, 'repo-main', 'a.txt'), 'one\n')
+    writeFileSync(path.join(src, 'repo-main', 'b.txt'), 'two\n')
+    const archive = path.join(root, 'repo-main.tar.gz')
+    const packed = spawnSync('tar', ['-czf', archive, '-C', src, 'repo-main'], { encoding: 'utf8' })
+    assert.equal(packed.status, 0, packed.stderr)
+
+    const dest = path.join(root, 'dest')
+    mkdirSync(dest)
+    const extracted = await extractArchive(archive, dest)
+    assert.equal(extracted.ok, true)
+    assert.equal(unwrapSingleDirectory(dest), true)
+    assert.deepEqual(readdirSync(dest).sort(), ['a.txt', 'b.txt'])
+    assert.equal(countEscapes(dest), 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('代理探测：识别 SOCKS5 端口，关闭端口返回 null', async () => {
+  const server = net.createServer((socket) => {
+    socket.once('data', () => {
+      // SOCKS5 方法选择应答：05 00（无需认证）
+      socket.write(Buffer.from([0x05, 0x00]))
+    })
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const hit = await probePort(port)
+    assert.equal(hit.port, port)
+    assert.equal(hit.kind, 'socks5')
+    assert.equal(await probePort(1), null)
+  } finally {
+    server.close()
+  }
+})
+
+test('只读快照：写操作被守卫拒绝', async () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'gw-snapshot-'))
+  try {
+    const store = new SettingsStore(home)
+    const runner = new GitRunner(store)
+    const ctx = { workspaceRegistry: { create: async () => ({ id: 'ws-1', title: 'snap' }) } }
+    const opener = new WorkspaceOpener(ctx, store, runner, { listRepos: async () => [] })
+    store.remember('someone/snap', { path: home, title: 'snap', snapshot: true, source: 'archive' })
+
+    for (const action of [
+      opener.pull('someone/snap'),
+      opener.push('someone/snap'),
+      opener.commit('someone/snap', 'msg', ['a.txt']),
+      opener.branches('someone/snap'),
+      opener.checkout('someone/snap', 'dev'),
+      opener.deleteBranch('someone/snap', 'dev'),
+      opener.integrate('someone/snap', 'rebase'),
+    ]) {
+      const result = await action
+      assert.equal(result.ok, false)
+      assert.match(result.error, /只读快照/)
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true })
   }
 })
