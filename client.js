@@ -44,6 +44,8 @@ window.__ModuleLoader__.load({
         'action.deleteBranch': '删除',
         'action.createBranch': '新建并切换',
         'action.trackBranch': '检出',
+        'action.checkUpdates': '检查更新',
+        'action.pullAll': '全部拉取',
         'hint.branches': '切换 / 新建分支',
         'hint.newBranch': '新分支名（从当前 HEAD 建）',
         'action.commit': '提交并推送',
@@ -97,6 +99,8 @@ window.__ModuleLoader__.load({
         'action.deleteBranch': 'Delete',
         'action.createBranch': 'Create & switch',
         'action.trackBranch': 'Check out',
+        'action.checkUpdates': 'Check updates',
+        'action.pullAll': 'Pull all',
         'hint.branches': 'Switch / create branch',
         'hint.newBranch': 'New branch name (from current HEAD)',
         'action.commit': 'Commit & push',
@@ -889,6 +893,53 @@ window.__ModuleLoader__.load({
         await refresh()
       })
 
+      /** 检查更新：对所有仓库 fetch（不合并），刷新角标。 */
+      const checkUpdates = () => run('check', async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: '检查更新…', percent: null })
+        try {
+          const payload = await streamCall(`${API}/check-updates`, {}, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          const parts = [`已检查 ${payload.total} 个仓库`]
+          parts.push(payload.behindRepos > 0 ? `${payload.behindRepos} 个落后远端` : '都是最新的')
+          if (payload.diverged.length > 0) parts.push(`${payload.diverged.length} 个已分叉`)
+          if (payload.failed.length > 0) parts.push(`${payload.failed.length} 个失败`)
+          setNotice(parts.join('，'))
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
+      /** 全部拉取：逐个快进，分叉的不动。 */
+      const pullAll = () => run('pullAll', async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: '全部拉取…', percent: null })
+        try {
+          const payload = await streamCall(`${API}/pull-all`, {}, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          const parts = [`更新 ${payload.pulled} 个`, `已最新 ${payload.upToDate} 个`]
+          if (payload.diverged.length > 0) parts.push(`${payload.diverged.length} 个分叉需处理`)
+          if (payload.failed.length > 0) parts.push(`${payload.failed.length} 个失败`)
+          setNotice(`全部拉取：${parts.join('，')}`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
       /** 切换分支 / 从当前 HEAD 新建分支 / 检出远端分支。 */
       const checkout = (row, name, create) => run(`checkout:${row.fullName}`, async () => {
         await call(`${API}/checkout`, { repo: row.fullName, name, create: create === true })
@@ -1066,7 +1117,13 @@ window.__ModuleLoader__.load({
           ]),
 
           h('div', { key: 'spaces', style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
-            h('div', { key: 't', style: S.sectionTitle }, `${t('section.workspaces', '已打开的工作区')} · ${workspaces.length}`),
+            h('div', { key: 't', style: { ...S.row, justifyContent: 'space-between' } }, [
+              h('div', { key: 'l', style: S.sectionTitle }, `${t('section.workspaces', '已打开的工作区')} · ${workspaces.length}`),
+              h('div', { key: 'r', style: S.row }, [
+                h(Button, { key: 'check', onClick: checkUpdates, disabled: busy !== '' }, t('action.checkUpdates', '检查更新')),
+                h(Button, { key: 'pullAll', onClick: pullAll, disabled: busy !== '' || workspaces.length === 0 }, t('action.pullAll', '全部拉取')),
+              ]),
+            ]),
             workspaces.length === 0
               ? h('div', { key: 'empty', style: { ...S.card, color: 'var(--dsw-alias-label-secondary)' } }, t('state.noWorkspaces', '还没有从 GitHub 打开过仓库。'))
               : workspaces.map((row) => h(WorkspaceCard, {
@@ -1100,8 +1157,35 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    /** 侧边栏图标（壳层给尺寸与选中状态，只画图形）。 */
+    /**
+     * 侧边栏图标（壳层给尺寸与选中状态，只画图形）+ 「有仓库落后」角标。
+     *
+     * 角标数据来自 `/summary`：那条路由只读本地，不发网络请求，所以每分钟轮询
+     * 一次是安全的；页面在后台时跳过。它反映的是「上次抓取之后」的落后数，
+     * 想看远端真实情况要点面板里的「检查更新」。
+     */
     function PanelIcon({ size }) {
+      const [behindRepos, setBehindRepos] = useState(0)
+
+      useEffect(() => {
+        let alive = true
+        const load = async () => {
+          if (typeof document !== 'undefined' && document.hidden === true) return
+          try {
+            const payload = await call(`${API}/summary`)
+            if (alive) setBehindRepos(payload.behindRepos ?? 0)
+          } catch {
+            /* 角标失败不该影响图标本身 */
+          }
+        }
+        void load()
+        const timer = setInterval(() => { void load() }, 60_000)
+        return () => {
+          alive = false
+          clearInterval(timer)
+        }
+      }, [])
+
       return h('svg', {
         viewBox: '0 0 16 16',
         width: size,
@@ -1117,6 +1201,9 @@ window.__ModuleLoader__.load({
         h('path', { key: 'p', d: 'M5.25 5.5v3.25a1.75 1.75 0 0 0 1.75 1.75h3.5' }),
         h('circle', { key: 'c1', cx: 5.25, cy: 4.75, r: 1.15, fill: 'currentColor', stroke: 'none' }),
         h('circle', { key: 'c2', cx: 11, cy: 10.5, r: 1.15, fill: 'currentColor', stroke: 'none' }),
+        behindRepos > 0
+          ? h('circle', { key: 'badge', cx: 13.4, cy: 2.6, r: 2.6, fill: 'var(--dsw-alias-state-warn-primary)', stroke: 'none' })
+          : null,
       ])
     }
 

@@ -290,3 +290,37 @@ test('有未合并提交的分支不会被安全删除', async () => {
     env.cleanup()
   }
 })
+
+test('summarize 一条命令拿到分支/ahead/behind/改动数', async () => {
+  const env = setup()
+  const runner = new GitRunner(new SettingsStore(env.root))
+  try {
+    let summary = await runner.summarize(env.clone)
+    assert.equal(summary.ok, true)
+    assert.equal(summary.branch, 'main')
+    assert.equal(summary.ahead, 0)
+    assert.equal(summary.behind, 0)
+    assert.equal(summary.dirty, 0)
+    assert.equal(summary.detached, false)
+
+    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--allow-empty', '-m', 'local'], env.clone)
+    summary = await runner.summarize(env.clone)
+    assert.equal(summary.ahead, 1)
+
+    advance(env, 'upstream')
+    git(fetchArgs(env.url, 'main'), env.clone)
+    summary = await runner.summarize(env.clone)
+    assert.equal(summary.behind, 1, '抓取后应看到落后 1')
+
+    writeFileSync(path.join(env.clone, 'new.txt'), 'x')
+    summary = await runner.summarize(env.clone)
+    assert.equal(summary.dirty, 1)
+
+    git(['checkout', '--detach', 'HEAD'], env.clone)
+    summary = await runner.summarize(env.clone)
+    assert.equal(summary.detached, true)
+    assert.equal(summary.branch, '')
+  } finally {
+    env.cleanup()
+  }
+})
