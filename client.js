@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-github-workspaces — 浏览器半边。
  *
  * 两处挂载，都走 ctx.slots.inject（壳层声明了座位才注册，加载顺序无关）：
@@ -549,7 +549,7 @@ window.__ModuleLoader__.load({
             signal: controller.signal,
             onFrame: (frame) => {
               if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
-              else if (frame.type === 'progress') setStage((previous) => ({ text: previous.text, percent: frame.percent }))
+              else if (frame.type === 'progress') setStage((previous) => ({ text: previous === null ? "" : previous.text, percent: frame.percent }))
             },
           })
           setUrlInput('')
@@ -571,7 +571,7 @@ window.__ModuleLoader__.load({
             signal: controller.signal,
             onFrame: (frame) => {
               if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
-              else if (frame.type === 'progress') setStage((previous) => ({ text: previous.text, percent: frame.percent }))
+              else if (frame.type === 'progress') setStage((previous) => ({ text: previous === null ? "" : previous.text, percent: frame.percent }))
             },
           })
           setNotice(`${row.fullName}：${payload.upToDate === true ? '已是最新' : '已快进更新'}（${payload.strategy}）`)
