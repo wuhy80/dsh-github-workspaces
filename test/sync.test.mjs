@@ -12,13 +12,22 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 
-import { archiveKind, countEscapes, extractArchive, guessRepoName, unwrapSingleDirectory } from '../lib/archive.js'
+import {
+  archiveKind,
+  countEscapes,
+  extractArchive,
+  guessRepoName,
+  mergeSnapshot,
+  readManifest,
+  unwrapSingleDirectory,
+  writeManifest,
+} from '../lib/archive.js'
 import { WorkspaceOpener } from '../lib/opener.js'
 import { probeHttpConnect, probeLocalProxies, probePort } from '../lib/proxy-probe.js'
 
@@ -409,6 +418,44 @@ test('代理探测：普通 Web 服务不会被误报成代理', async () => {
     assert.equal(found.some((item) => item.port === webPort), false, '普通 Web 服务应被丢弃')
   } finally {
     for (const server of servers) server.close()
+  }
+})
+
+test('快照增量覆盖：新增/更新/删除，且不碰用户自己建的文件', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'gw-merge-'))
+  try {
+    const target = path.join(root, 'target')
+    const incoming = path.join(root, 'incoming')
+    mkdirSync(target)
+    mkdirSync(incoming)
+    // 旧快照：上次导入过的三个文件 + 用户自己建的 mine.txt
+    writeFileSync(path.join(target, 'keep.txt'), 'old')
+    writeFileSync(path.join(target, 'change.txt'), 'v1')
+    writeFileSync(path.join(target, 'gone.txt'), 'x')
+    writeFileSync(path.join(target, 'mine.txt'), 'user-created')
+    const previous = ['keep.txt', 'change.txt', 'gone.txt']
+    // 新归档：keep（不变）、change（v2）、new（新增）；没有 gone
+    writeFileSync(path.join(incoming, 'keep.txt'), 'old')
+    writeFileSync(path.join(incoming, 'change.txt'), 'v2')
+    writeFileSync(path.join(incoming, 'new.txt'), 'n')
+
+    const merged = mergeSnapshot(target, incoming, previous)
+    assert.equal(merged.added, 1, 'new.txt 应算新增')
+    assert.equal(merged.updated, 2, 'keep.txt 与 change.txt 应算更新')
+    assert.deepEqual(merged.removed, ['gone.txt'], '上次导入过、这次没有的应删除')
+    assert.equal(merged.total, 3)
+
+    assert.equal(readFileSync(path.join(target, 'change.txt'), 'utf8'), 'v2', '内容应被覆盖')
+    assert.equal(existsSync(path.join(target, 'gone.txt')), false, 'gone.txt 应被删掉')
+    assert.equal(existsSync(path.join(target, 'new.txt')), true)
+    assert.equal(readFileSync(path.join(target, 'mine.txt'), 'utf8'), 'user-created', '不是导入来的文件必须保留')
+
+    const manifest = path.join(root, 'manifest.json')
+    writeManifest(manifest, merged.incoming)
+    assert.deepEqual(readManifest(manifest), ['change.txt', 'keep.txt', 'new.txt'])
+    assert.deepEqual(readManifest(path.join(root, 'missing.json')), [])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })
 

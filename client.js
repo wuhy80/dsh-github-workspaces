@@ -48,6 +48,7 @@ window.__ModuleLoader__.load({
         'action.pullAll': '全部拉取',
         'action.import': '导入',
         'action.probeProxy': '探测',
+        'action.refreshSnapshot': '刷新快照',
         'import.title': '或：导入浏览器下载的归档（没有 git 历史，只读快照）',
         'hint.branches': '切换 / 新建分支',
         'hint.newBranch': '新分支名（从当前 HEAD 建）',
@@ -107,6 +108,7 @@ window.__ModuleLoader__.load({
         'action.pullAll': 'Pull all',
         'action.import': 'Import',
         'action.probeProxy': 'Probe',
+        'action.refreshSnapshot': 'Refresh snapshot',
         'import.title': 'Or import an archive downloaded in your browser (no git history, read-only)',
         'hint.branches': 'Switch / create branch',
         'hint.newBranch': 'New branch name (from current HEAD)',
@@ -464,7 +466,8 @@ window.__ModuleLoader__.load({
     }
 
     /** 已打开工作区的卡片：状态 + 分支 + 改动勾选 + 单文件 diff 预览。 */
-    function WorkspaceCard({ row, busy, onPull, onPush, onIntegrate, onAbort, onContinue, onCommit, onCheckout, onDeleteBranch, onReveal, onForget }) {
+    function WorkspaceCard({ row, busy, onPull, onPush, onIntegrate, onAbort, onContinue, onCommit, onCheckout, onDeleteBranch, onRefreshSnapshot, onReveal, onForget }) {
+      const fileInputRef = useRef(null)
       const [branchOpen, setBranchOpen] = useState(false)
       const [branches, setBranches] = useState(null)
       const [newBranch, setNewBranch] = useState('')
@@ -598,6 +601,33 @@ window.__ModuleLoader__.load({
           h(Button, { key: 'reveal', onClick: () => onReveal(row), disabled: busy }, t('action.reveal', '打开目录')),
           h(Button, { key: 'forget', onClick: () => onForget(row), disabled: busy }, t('action.forget', '移除登记')),
         ]),
+
+        // 只读快照：换新归档时增量覆盖
+        row.snapshot === true
+          ? h('div', { key: 'snapRow', style: S.row }, [
+            h('input', {
+              key: 'f',
+              type: 'file',
+              accept: '.zip,.tar.gz,.tgz,.tar',
+              ref: fileInputRef,
+              style: { display: 'none' },
+              onChange: (event) => {
+                const picked = event.target.files !== null && event.target.files.length > 0 ? event.target.files[0] : null
+                event.target.value = ''
+                if (picked !== null) onRefreshSnapshot(row, picked)
+              },
+            }),
+            h(Button, {
+              key: 'b',
+              onClick: () => {
+                const el = fileInputRef.current
+                if (el !== null && el !== undefined) el.click()
+              },
+              disabled: busy,
+            }, t('action.refreshSnapshot', '刷新快照')),
+            h('span', { key: 'h', style: S.mono }, '选新的归档覆盖：只动上次导入的文件'),
+          ])
+          : null,
 
         // 分支面板
         branchOpen ? h('div', {
@@ -1023,6 +1053,27 @@ window.__ModuleLoader__.load({
         }
       })
 
+      /** 刷新只读快照：用新归档增量覆盖（只动上次导入的文件）。 */
+      const refreshSnapshot = (row, file) => run(`refresh:${row.fullName}`, async () => {
+        const controller = new AbortController()
+        abortRef.current = controller
+        setStage({ text: '接收归档…', percent: null })
+        try {
+          const query = `?repo=${encodeURIComponent(row.fullName)}&name=${encodeURIComponent(file.name)}`
+          const payload = await streamUpload(`${API}/refresh-snapshot${query}`, file, {
+            signal: controller.signal,
+            onFrame: (frame) => {
+              if (frame.type === 'stage') setStage({ text: frame.text, percent: null })
+            },
+          })
+          setNotice(`${row.fullName}：快照已刷新（新增 ${payload.added}、更新 ${payload.updated}、删除 ${payload.removed}）`)
+          await refresh()
+        } finally {
+          abortRef.current = null
+          setStage(null)
+        }
+      })
+
       /** 探测本地代理端口（只连 127.0.0.1）。 */
       const probeProxy = () => run('probe', async () => {
         const payload = await call(`${API}/proxy-probe`)
@@ -1259,6 +1310,7 @@ window.__ModuleLoader__.load({
                 onCommit: commit,
                 onCheckout: checkout,
                 onDeleteBranch: deleteBranch,
+                onRefreshSnapshot: refreshSnapshot,
                 onReveal: reveal,
                 onForget: forget,
               })),
