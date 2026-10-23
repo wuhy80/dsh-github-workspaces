@@ -18,13 +18,14 @@ import { GitRunner } from './lib/git.js'
 import { GitHubApi } from './lib/github.js'
 import { WorkspaceOpener } from './lib/opener.js'
 import { makeRoutes } from './lib/routes.js'
+import { installToolGuard } from './lib/guard.js'
 import { GITHUB_WORKSPACES_GUIDANCE, githubWorkspaceTool } from './lib/tools.js'
 
 /** 稳定的 Cordis 插件名。 */
 export const name = 'github-workspaces'
 
 /** 依赖的服务：没有它们这个插件没有意义。 */
-export const inject = ['webServer', 'tools', 'systemPrompt', 'workspaceRegistry']
+export const inject = ['webServer', 'tools', 'systemPrompt', 'workspaceRegistry', 'workingDirectory']
 
 /** 说明段落的位置（排在 dsh-ssh 的 150 之后）。 */
 const SECTION_ORDER = 152
@@ -82,6 +83,19 @@ export function apply(ctx) {
       return () => {}
     }
   }, 'github-workspaces: tool')
+
+  // A 方案：工具调用水闸。拦 shell 里对本插件仓库的 git push / 变基 / 硬重置，
+  // 逼它走面板（面板才有链路降级、token 注入与脱敏）。
+  ctx.effect(() => {
+    try {
+      const disposer = installToolGuard({ ctx, store, log: logMount })
+      logMount('tool guard installed')
+      return disposer
+    } catch (error) {
+      logMount(`tool guard failed: ${describe(error)}`)
+      return () => {}
+    }
+  }, 'github-workspaces: guard')
 
   // 让 agent 知道插件存在与边界
   ctx.effect(() => {

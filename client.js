@@ -78,6 +78,10 @@ window.__ModuleLoader__.load({
         'label.authorName': '提交作者名',
         'label.authorEmail': '提交邮箱',
         'label.shallow': '浅克隆（--depth 1）',
+        'label.guard': '提交护栏（只作用于本插件打开的仓库）',
+        'label.guardTool': 'A：拦 shell 里的 git push / 变基 / 硬重置',
+        'label.guardPushUrl': 'C：装 pushurl 哨兵，裸 git push 连不出去',
+        'hint.guard': '只影响 agent / 终端的裸 git push；面板的「提交并推送」显式传 URL，不受影响。',
         'state.loading': '加载中…',
         'state.noGit': '未找到 git',
         'state.noWorkspaces': '还没有从 GitHub 打开过仓库。',
@@ -136,6 +140,10 @@ window.__ModuleLoader__.load({
         'label.authorName': 'Commit author',
         'label.authorEmail': 'Commit email',
         'label.shallow': 'Shallow clone (--depth 1)',
+        'label.guard': 'Push guard (this plugin\'s repositories only)',
+        'label.guardTool': 'A: block shell git push / rebase / reset --hard',
+        'label.guardPushUrl': 'C: pushurl sentinel, bare git push cannot connect',
+        'hint.guard': 'Only affects bare git push from agent or terminal; the panel passes an explicit URL and still works.',
         'state.loading': 'Loading…',
         'state.noGit': 'git not found',
         'state.noWorkspaces': 'No repository opened from GitHub yet.',
@@ -766,6 +774,17 @@ window.__ModuleLoader__.load({
       const update = (patch) => onChange({ ...draft, ...patch })
       const updateNetwork = (patch) => onChange({ ...draft, network: { ...draft.network, ...patch } })
       const updateAuthor = (patch) => onChange({ ...draft, author: { ...draft.author, ...patch } })
+      const updateGuard = (patch) => onChange({ ...draft, guard: { ...(draft.guard ?? { tool: true, pushUrl: true }), ...patch } })
+      const guardValue = (key) => (draft.guard ?? {})[key] !== false
+      const guardToggle = (key, label) => h('div', { key, style: { ...S.row, gap: 6, cursor: 'pointer' } }, [
+        h('input', {
+          key: 'c',
+          type: 'checkbox',
+          checked: guardValue(key),
+          onChange: () => updateGuard({ [key]: !guardValue(key) }),
+        }),
+        h('span', { key: 'l', style: S.fieldLabel, onClick: () => updateGuard({ [key]: !guardValue(key) }) }, label),
+      ])
       return h('div', { style: { ...S.card, display: 'flex', flexDirection: 'column' } }, [
         h('div', { key: 't', style: S.sectionTitle }, t('section.settings', '设置')),
         h('div', { key: 'token', style: S.field }, [
@@ -812,6 +831,13 @@ window.__ModuleLoader__.load({
         h('div', { key: 'author', style: S.row }, [
           h('div', { key: 'n', style: { flex: 1, minWidth: 0 } }, h(Field, { label: t('label.authorName', '提交作者名') }, h(Input, { value: draft.author.name, onChange: (value) => updateAuthor({ name: value }) }))),
           h('div', { key: 'e', style: { flex: 1, minWidth: 0 } }, h(Field, { label: t('label.authorEmail', '提交邮箱') }, h(Input, { value: draft.author.email, onChange: (value) => updateAuthor({ email: value }) }))),
+        ]),
+        h('div', { key: 'guard', style: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 } }, [
+          h('div', { key: 'l', style: S.fieldLabel }, t('label.guard', '提交护栏（只作用于本插件打开的仓库）')),
+          guardToggle('tool', t('label.guardTool', 'A：拦 shell 里的 git push / 变基 / 硬重置')),
+          guardToggle('pushUrl', t('label.guardPushUrl', 'C：装 pushurl 哨兵，裸 git push 连不出去')),
+          h('div', { key: 'hint', style: { ...S.mono, color: 'var(--dsw-alias-label-secondary)' } },
+            t('hint.guard', '只影响 agent / 终端的裸 git push；面板的「提交并推送」显式传 URL，不受影响。')),
         ]),
         h('div', { key: 'foot', style: S.row }, [
           h(Button, { key: 'save', onClick: () => onSave(draft), disabled: busy, primary: true }, t('action.save', '保存')),
@@ -861,6 +887,8 @@ window.__ModuleLoader__.load({
             network: { ...settings.network },
             author: { ...settings.author },
             clone: { ...settings.clone },
+            // 宿主还没重启时快照里没有 guard 段：按默认（两道都开）兜底，别让面板崩掉
+            guard: { tool: true, pushUrl: true, ...(settings.guard ?? {}) },
           })
         } catch (problem) {
           setError(errorText(problem))
@@ -1147,10 +1175,14 @@ window.__ModuleLoader__.load({
           network: next.network,
           author: next.author,
           clone: next.clone,
+          guard: next.guard,
         }
         if (next.token !== '') patch.token = next.token
-        await call(`${API}/settings`, patch)
-        setNotice('设置已保存')
+        const saved = await call(`${API}/settings`, patch)
+        const synced = saved.guardSync === undefined ? null : saved.guardSync
+        setNotice(synced === null
+          ? '设置已保存'
+          : `设置已保存，已把护栏同步到 ${synced.repos.length} 个仓库`)
         await refresh()
       })
 

@@ -108,6 +108,9 @@
   用 SOCKS5 握手 + HTTP 响应区分 `socks5` / `http`，点一下就把 `network.proxy` 填好。
   注意：**浏览器扩展级代理探不到也接不上**（它只代理浏览器自身流量）。
 - **agent 工具 `github_workspace`**：`list | status | open | pull | diagnose | repos`。
+- **两道推送护栏（0.10.0）**：`tools/pre-execute` 水闸拦住 shell 里对本插件仓库的
+  `git push` / 变基 / 硬重置并给出「请改用面板」的理由；仓库里同时装 `pushurl` 哨兵，
+  让任何不传 URL 的 `git push` 都连不出去（面板显式传 URL，照常能推）。默认开启，可在设置里关。
 
 ## 国内网络：自动降级 + 代理兜底
 
@@ -128,6 +131,33 @@
 另外每个 git 调用都带 `core.longpaths`、`http.version=HTTP/1.1`，避免 Windows 长路径与
 弱网下的 `RPC failed`；默认 `--depth 1 --single-branch` 浅克隆。
 
+## 两道护栏：shell 里的推送也会被拦住
+
+「提交推送只在面板里」原先只是**工具层的自律**——`github_workspace` 里没有 push 动作，
+但工作区会话里 agent 有 shell，一条 `git push` 就绕过了链路降级、token 注入与 token 脱敏。
+0.10.0 起补上两道护栏，默认都开：
+
+| | 做法 | 拦得住谁 | 拦不住谁 |
+|---|---|---|---|
+| **A · 工具水闸** | 监听宿主 `tools/pre-execute`，`pwsh` / `bash` / `terminal` / `run_code` / `ssh_exec` 里的 `git push`、`git rebase`、`git reset --hard`、`git filter-branch` 直接返回拒绝理由 | agent 通过 DSH 工具发起的命令（含子 agent、workflow） | 你自己在终端 / 编辑器 / GitHub Desktop 里推 |
+| **C · pushurl 哨兵** | 给仓库写 `remote.origin.pushurl = https://127.0.0.1:9/dsh-github-workspaces-blocked` | **任何**不传 URL 的 `git push`（含你自己的终端、编辑器、`--dry-run`） | 显式传 URL 的推送——**面板正是这条**，所以照常能推 |
+
+两者互补：A 给 agent 一句能读懂的话（「请改用面板」+ 为什么），C 在 git 层做真拦截。
+判定只针对**本插件管辖的路径**（克隆根 + 已登记仓库），别的项目里 `git push` 不受影响。
+
+细节与边界：
+
+- A 的判定先分词再找子命令，不是裸正则：`git -C ../repo push`、`cmd /c git push`、
+  `bash -lc "git push"` 都能识别，而 `git commit -m "git push"`（提交信息里提到）不会误伤。
+- `git status / log / diff / fetch / add / commit` 一律放行——本地提交不联网，也不改远端。
+- 「待推几个」用 `git status -sb` 或 `git log @{u}..HEAD` 看；`git push --dry-run` 也会被 C 挡住，
+  所以 A 把它一起拦了，免得「护栏说可以、git 说连不上」。
+- 放行方式：面板设置里关掉对应开关；或临时设宿主环境变量
+  `DSH_GITHUB_WORKSPACES_ALLOW_GIT_PUSH=1`（只能由用户改宿主环境，agent 改不到）。
+- 关掉 C 会把所有已登记仓库的哨兵一起摘掉；用户自己配过 `pushurl` 的仓库**不覆盖**。
+- **A 是行为护栏，不是安全边界**：写脚本、编码执行、`--no-verify` 之类都能绕；C 才是 git 层的硬拦。
+  真要防恶意 agent，靠的是权限预设与沙箱，不是这两道护栏。
+
 ## 同步的正确性（0.2.0 修复）
 
 两个曾经会让「拉取」直接失效、让「待推/待拉」永远错位的问题，现在都有回归测试兜着：
@@ -146,6 +176,8 @@
 - 因此**提交、推送、变基/合并都只在面板里由用户手动点击**：agent 工具不提供这些动作。
 - 拉取默认只做快进（`merge --ff-only`）。分叉时**不会**自动变基或合并，而是把选择权交给用户；
   冲突时也不会替你解决或丢弃改动。**从不 reset、从不 force push**。
+- 两道推送护栏（见上一节）：A 拦 DSH 工具里的命令，C 在 git 层挡裸 `git push`。
+  A 是行为护栏不是安全边界（能绕），C 才是硬拦；用户自己配的 `pushurl` 不被覆盖。
 - 所有返回给前端/模型的报错都会把 token 抹成 `***`。
 - 设置落在 `$DSH_HOME/dsh-github-workspaces.json`（权限 0600）；token 也可直接用环境变量
   `GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_PAT`（优先于文件）。
@@ -163,6 +195,8 @@
 | `network.apiBase` | `https://api.github.com` | 可替换为镜像 API |
 | `author.name` / `author.email` | 空 | 提交身份；留空则读 git 全局配置，再留空会明确报错 |
 | `clone.shallow` | `true` | 是否浅克隆 |
+| `guard.tool` | `true` | A：拦 shell 里对本插件仓库的 `git push` / 变基 / 硬重置 |
+| `guard.pushUrl` | `true` | C：给仓库装 `remote.origin.pushurl` 哨兵（切换时同步到所有已登记仓库） |
 
 ## 结构
 
@@ -170,29 +204,38 @@
 index.js            宿主入口：注册路由 / 工具 / 提示段落
 lib/store.js        设置与仓库登记（0600 JSON）
 lib/proc.js         子进程包装（超时 / 取消 / 进度）、git 与 curl 探测
-lib/git.js          克隆/状态/拉取/提交推送/网络自检 + 策略降级
+lib/git.js          克隆/状态/拉取/提交推送/网络自检 + 策略降级 + pushurl 哨兵
+lib/guard.js        A 方案：命令分词、子命令判定、tools/pre-execute 水闸
 lib/github.js       REST（仓库列表、身份）+ 仓库地址解析
-lib/opener.js       仓库 → 工作区（先克隆，再登记）
+lib/opener.js       仓库 → 工作区（先克隆，再登记；装护栏）
 lib/routes.js       /api/dsh-github-workspaces 路由族（loopback 门禁；open/pull/commit 为 NDJSON 流）
 lib/tools.js        github_workspace 工具（标准 JSON Schema）
 client.js           浏览器半边：sidebar.panellist + main 面板（含进度条与取消）
 test/sync.test.mjs  同步路径回归测试（临时裸仓库，不碰网络）
+test/guard.test.mjs A/C 护栏回归测试（命令判定 + pushurl 真实行为）
 ```
 
 ## 测试
 
 ```bash
-node --test test/sync.test.mjs
+node --test test/*.test.mjs
 ```
 
-五条用例：fetch 参数不再带 `--depth`；浅克隆 + 远端前进 + 插件的 fetch/merge 序列能快进且
-跟踪 ref 同步、仓库仍是浅克隆；推送到 URL 后补 `update-ref` 使 ahead 归零；超时后立即结算；
-`AbortSignal` 中止会杀掉子进程并标记 `aborted`。
+`test/sync.test.mjs`（五条）：fetch 参数不再带 `--depth`；浅克隆 + 远端前进 + 插件的 fetch/merge
+序列能快进且跟踪 ref 同步、仓库仍是浅克隆；推送到 URL 后补 `update-ref` 使 ahead 归零；
+超时后立即结算；`AbortSignal` 中止会杀掉子进程并标记 `aborted`。
+
+`test/guard.test.mjs`（18 条）：推送/历史命令行被识别、读命令与提交信息不被误伤、
+作用域只覆盖克隆根与已登记仓库、水闸在关掉开关或设了放行环境变量时放行；C 方案真跑 git，
+断言「裸 push 失败、显式传 URL 的 push 成功、用户自配 pushurl 不被覆盖、解除后配置消失」。
 
 ## 已知限制
 
 - 浅克隆的仓库没有完整历史；需要时可手动 `git fetch --unshallow`。
 - 镜像前缀只能读，推送必须直连或 SSH。
+- 装了 C 的哨兵后，你自己在终端 `git push` 也会被挡：要么用面板推，要么临时关掉 C
+  （面板设置），要么在这条命令里显式写 URL（`git push https://github.com/o/r.git HEAD:main`）。
+- A 的判定是字符串级别的，写脚本 / 编码执行能绕过；它防的是「agent 顺手一推」，不是恶意绕过。
 - diff 是纯文本展示（不做语法高亮/并排）；单文件超过 200 KB 会截断。
 - 面板不需要 Cordis Config schema（设置走自己的面板），所以插件详情页里没有配置表单。
 - 首次打开一个大仓库会慢；克隆超时 420 s，可随时取消。
