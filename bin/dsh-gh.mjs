@@ -38,18 +38,21 @@ const info = (text) => console.log(`  ${text}`)
 function parseArgs(argv) {
   const options = { message: '', repo: '', dir: '', json: false, help: false }
   const positional = []
+  // 支持重复 -m：与 git 一致，多段之间空行分隔（首段即提交标题）
+  const messages = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help') options.help = true
     else if (arg === '--json') options.json = true
-    else if (arg === '-m' || arg === '--message') options.message = argv[++i] ?? ''
-    else if (arg.startsWith('--message=')) options.message = arg.slice('--message='.length)
+    else if (arg === '-m' || arg === '--message') messages.push(argv[++i] ?? '')
+    else if (arg.startsWith('--message=')) messages.push(arg.slice('--message='.length))
     else if (arg === '--repo') options.repo = argv[++i] ?? ''
     else if (arg.startsWith('--repo=')) options.repo = arg.slice('--repo='.length)
     else if (arg === '--dir') options.dir = argv[++i] ?? ''
     else if (arg.startsWith('--dir=')) options.dir = arg.slice('--dir='.length)
     else if (!arg.startsWith('-')) positional.push(arg)
   }
+  options.message = messages.filter((text) => text.trim() !== '').join('\n\n')
   return { command: positional[0] ?? '', target: options.repo || positional[1] || '', options }
 }
 
