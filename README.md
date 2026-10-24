@@ -142,8 +142,24 @@
 | **A · 工具水闸** | 监听宿主 `tools/pre-execute`，`pwsh` / `bash` / `terminal` / `run_code` / `ssh_exec` 里的 `git push`、`git rebase`、`git reset --hard`、`git filter-branch` 直接返回拒绝理由 | agent 通过 DSH 工具发起的命令（含子 agent、workflow） | 你自己在终端 / 编辑器 / GitHub Desktop 里推 |
 | **C · pushurl 哨兵** | 给仓库写 `remote.origin.pushurl = https://127.0.0.1:9/dsh-github-workspaces-blocked` | **任何**不传 URL 的 `git push`（含你自己的终端、编辑器、`--dry-run`） | 显式传 URL 的推送——**面板正是这条**，所以照常能推 |
 
-两者互补：A 给 agent 一句能读懂的话（「请改用面板」+ 为什么），C 在 git 层做真拦截。
+两者互补：A 给 agent 一句能读懂的话（「走推送链路」+ 为什么），C 在 git 层做真拦截。
 判定只针对**本插件管辖的路径**（克隆根 + 已登记仓库），别的项目里 `git push` 不受影响。
+
+### shell 里也能推：`dsh-gh`
+
+被拦之后不想切面板？用同一个链路在 shell 里推——它调用的就是面板那个
+`WorkspaceOpener.push()`，**不是复制一份逻辑**，所以降级、注入、脱敏、补 `update-ref`
+全都一致：
+
+```powershell
+node bin/dsh-gh.mjs status [owner/repo]              # 分支 / 改动 / 待推 / 待拉
+node bin/dsh-gh.mjs push   [owner/repo]              # 推送当前 HEAD
+node bin/dsh-gh.mjs sync   -m "提交信息" [owner/repo]  # 提交全部改动 + 推送
+node bin/dsh-gh.mjs pull   [owner/repo]              # 快进拉取（不 force）
+```
+
+不写 `owner/repo` 时按当前目录推断（取已登记仓库里最长的匹配路径）。
+装成链接包后也可以用包名里的 `bin`：`dsh-gh push`。
 
 细节与边界：
 

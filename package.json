@@ -7,6 +7,9 @@
   "type": "module",
   "icon": "icon.svg",
   "main": "index.js",
+  "bin": {
+    "dsh-gh": "./bin/dsh-gh.mjs"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -22,6 +25,7 @@
   },
   "files": [
     "index.js",
+    "bin",
     "lib",
     "client.js",
     "test",

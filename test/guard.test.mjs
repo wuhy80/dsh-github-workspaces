@@ -168,10 +168,13 @@ test('normalizePath 归一 Windows 路径', () => {
   assert.equal(normalizePath(''), '')
 })
 
-test('拒绝理由指向面板并给出放行方式', () => {
+test('拒绝理由指向 dsh-gh（同一条推送链路）并给出放行方式', () => {
   const text = blockReason([{ action: '推送' }])
   assert.match(text, /面板/)
   assert.match(text, /已阻止：推送/)
+  // shell 里的替代方案：同一个 WorkspaceOpener，不是裸 git push
+  assert.match(text, /dsh-gh\.mjs/)
+  assert.match(text, /sync/)
   assert.ok(text.includes(ALLOW_ENV))
 })
 
